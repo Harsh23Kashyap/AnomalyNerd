@@ -1,0 +1,4 @@
+# Core AnomalyNerd uses only the Python standard library (3.9+).
+# These are optional / for development:
+pytest>=7.0        # run the test suite
+# pandas, numpy are NOT required by the detectors; only used in some ad-hoc scripts.
