@@ -18,13 +18,18 @@ pip install -r requirements.txt        # Python 3.9+ (core is pure stdlib; pytes
 python -m anomalynerd.cli examples/halley_ozone_october.csv --metric ozone_DU --lower-better
 python -m anomalynerd.cli examples/co2_annual.csv --metric mean --higher-better --ignore unc
 python -m anomalynerd.cli examples/newcomb_speed_of_light.csv --metric deviation
-python -m anomalynerd.cli examples/draft_lottery_1970.csv --metric mean_draft_rank --ignore month --expect-flat month_num
-python -m anomalynerd.cli results.csv --json          # machine-readable output
+python -m anomalynerd.cli examples/draft_lottery_1970.csv --metric mean_draft_rank --higher-better --ignore month --expect-flat month_num
+python -m anomalynerd.cli results.csv --metric RMSE --json  # machine-readable output
 ```
+
+Known metrics such as RMSE and accuracy infer their direction. For ambiguous metrics (or
+wide-format tables with method names as columns), pass `--lower-better` or
+`--higher-better`. This avoids silently reversing winners. The text report
+shows the metric and chosen direction; `--json` remains machine-readable.
 
 Run the tests:
 ```bash
-pytest -q          # 13 checks over synthetic + 6 real datasets
+pytest -q          # 18 checks over synthetic, supplied datasets, and direction
 ```
 
 ---

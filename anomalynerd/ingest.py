@@ -12,13 +12,32 @@ Two accepted CSV shapes:
 Schema inference is a best-effort GUESS; every choice can be overridden by the caller.
 """
 from __future__ import annotations
-import csv, re, math
+import csv, re
+from pathlib import Path
 from .model import TidyTable, Axis, MISSING
 
 _METRIC_WORDS = ("rmse", "mae", "mse", "error", "err", "loss", "accuracy", "acc",
                  "score", "auc", "f1", "precision", "recall", "value", "runtime",
                  "time", "latency")
-_LOWER_BETTER = ("rmse", "mae", "mse", "error", "err", "loss", "runtime", "time", "latency")
+_LOWER_BETTER = {"rmse", "mae", "mse", "error", "err", "loss", "runtime", "time", "latency", "deviation"}
+_HIGHER_BETTER = {"accuracy", "acc", "score", "auc", "f1", "precision", "recall", "rating", "income"}
+
+
+def _metric_direction(metric_name, override):
+    """Use an explicit choice first; never silently call an unknown metric lower-better."""
+    if override is not None:
+        return override
+    tokens = set(re.findall(r"[a-z0-9]+", metric_name.lower()))
+    lower = bool(tokens & _LOWER_BETTER)
+    higher = bool(tokens & _HIGHER_BETTER)
+    if lower != higher:
+        return lower
+    raise ValueError(
+        f"Cannot infer whether {metric_name!r} is lower or higher better; "
+        "pass --lower-better or --higher-better."
+    )
+
+
 _MISSING_TOKENS = {"", "--", "-", "n/a", "na", "nan", "none", "null"}
 
 _ORDER_LEXICON = [
@@ -69,10 +88,14 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
              name=None, orders=None, index_cols=None, ignore_cols=None):
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
-        header = next(reader)
+        header = next(reader, None)
+        if not header or not any(h.strip() for h in header):
+            raise ValueError("CSV has no header")
         data = [row for row in reader if any(c.strip() for c in row)]
+        if not data:
+            raise ValueError("CSV has no data rows")
     cols = {h: [row[i] if i < len(row) else "" for row in data] for i, h in enumerate(header)}
-    name = name or path.split("/")[-1]
+    name = name or Path(path).name
     orders = orders or {}
 
     numeric_cols = [h for h in header if _looks_numeric(cols[h])]
@@ -104,7 +127,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
             for c in idx_cols:
                 axes[c] = _make_axis(c, [_coerce(x) for x in cols[c]], orders)
             axes["method"] = Axis("method", "unordered_cat")
-            lib = True if lower_is_better is None else lower_is_better
+            lib = _metric_direction("value", lower_is_better)
             return TidyTable(name, axes, entity_axis="method", metric_name="value",
                              lower_is_better=lib, rows=rows)
 
@@ -144,9 +167,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
         if c == ecol and ax.kind != "ordered_cat":
             ax = Axis(c, "unordered_cat")
         axes[c] = ax
-    lib = lower_is_better
-    if lib is None:
-        lib = any(w in mcol.lower() for w in _LOWER_BETTER) or True
+    lib = _metric_direction(mcol, lower_is_better)
     return TidyTable(name, axes, entity_axis=ecol, metric_name=mcol,
                      lower_is_better=lib, rows=rows)
 

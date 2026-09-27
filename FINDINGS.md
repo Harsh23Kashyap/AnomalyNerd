@@ -105,5 +105,5 @@ Two small tables with a *conceptually ordered* category and a documented excepti
 
 - **Catches real anomalies:** the ozone hole, a research paper's results's jump/reversal/copy-paste, Anscombe's and Newcomb's outliers, the draft-lottery bias, thyroid anomaly-concentration bins, and ordered-category exceptions (education income, product tiers).
 - **Stays quiet on normal data:** CO₂'s healthy trend and the clean Anscombe sets produce no false alarms.
-- **Reproducible:** a 10-check test suite locks all of this in (`pytest -q`).
+- **Reproducible:** an 18-check test suite locks all of this in (`pytest -q`).
 - **Honest:** it flags *where* to look and rates its confidence; it never claims to know *why*.

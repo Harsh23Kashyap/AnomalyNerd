@@ -109,7 +109,7 @@ def test_newcomb_two_outliers_no_noise():
 # --------------------------------------------------------------- Draft lottery (T8 trend)
 def test_draft_lottery_trend():
     t = read_csv(os.path.join(EX, "draft_lottery_1970.csv"),
-                 metric_col="mean_draft_rank", ignore_cols=["month"])
+                 metric_col="mean_draft_rank", lower_is_better=False, ignore_cols=["month"])
     # without a flatness hint: a low-confidence candidate only
     flags_default = analyze(t)
     tr = _by(flags_default, "trend")

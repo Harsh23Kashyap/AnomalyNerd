@@ -12,32 +12,35 @@ Examples:
 The tool POINTS at what deserves a closer look; it does not diagnose or re-run anything.
 """
 import argparse, json, sys
+from textwrap import wrap
 from .ingest import read_csv
 from .analyze import analyze
 
 
-_PRIO_MARK = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}
-
-
-def _fmt_report(flags, table_name):
+def _fmt_report(flags, table_name, metric_name, lower_is_better, width=82):
+    direction = "lower is better" if lower_is_better else "higher is better"
+    counts = {p: sum(f.priority == p for f in flags) for p in ("HIGH", "MEDIUM", "LOW")}
+    lines = ["ANOMALYNERD  /  RESULTS REVIEW",
+             "=" * width,
+             f"Table    {table_name}",
+             f"Metric   {metric_name} ({direction})",
+             f"Flags    {len(flags)}  |  HIGH {counts['HIGH']}   MEDIUM {counts['MEDIUM']}   LOW {counts['LOW']}",
+             "-" * width]
     if not flags:
-        return f"AnomalyNerd: no anomalies flagged in '{table_name}'."
-    lines = [f"AnomalyNerd report for '{table_name}'  ({len(flags)} flag(s))", "=" * 64]
-    counts = {}
-    for f in flags:
-        counts[f.priority] = counts.get(f.priority, 0) + 1
-    lines.append("Summary: " + ", ".join(f"{k}={counts[k]}" for k in ("HIGH", "MEDIUM", "LOW") if k in counts))
-    lines.append("")
-    for f in flags:
-        mark = _PRIO_MARK.get(f.priority, "  ")
-        head = f"{mark}[{f.priority}] {f.type}"
+        return "\n".join(lines + ["No anomalies flagged. This is not a validation of the results."])
+    for i, f in enumerate(flags, 1):
+        title = f.type.replace("_", " ").capitalize()
         if f.axis:
-            head += f" along '{f.axis}'"
+            title += f"  /  {f.axis}"
+        lines.append(f"{i:02d}  {f.priority:<6}  {title}")
         if f.coords:
-            ctx = ", ".join(f"{k}={v}" for k, v in f.coords.items())
-            head += f"  ({ctx})"
-        lines.append(head)
-        lines.append(f"      {f.suggestion}")
+            context = ", ".join(f"{k}={v}" for k, v in f.coords.items())
+            lines.extend(wrap("Context: " + context, width=width - 5, initial_indent="     ", subsequent_indent="     "))
+        lines.extend(wrap(f.suggestion, width=width - 5,
+                          initial_indent="     ", subsequent_indent="     ",
+                          break_long_words=False, break_on_hyphens=False))
+        lines.append("")
+    lines.append("Flags point to checks, not proven errors.")
     return "\n".join(lines)
 
 
@@ -58,8 +61,9 @@ def main(argv=None):
     ap.add_argument("csv", help="Path to the CSV results table")
     ap.add_argument("--metric", help="Name of the metric column (auto-detected if omitted)")
     ap.add_argument("--entity", help="Name of the competitor/entity column (e.g. 'method')")
-    ap.add_argument("--lower-better", dest="lower", action="store_true", help="Lower metric is better (RMSE/error)")
-    ap.add_argument("--higher-better", dest="higher", action="store_true", help="Higher metric is better (accuracy)")
+    direction = ap.add_mutually_exclusive_group()
+    direction.add_argument("--lower-better", dest="lower", action="store_true", help="Lower metric is better (RMSE/error)")
+    direction.add_argument("--higher-better", dest="higher", action="store_true", help="Higher metric is better (accuracy)")
     ap.add_argument("--ignore", nargs="*", default=None, help="Columns to ignore (e.g. uncertainty)")
     ap.add_argument("--order", help='Conceptual order for categorical axes: "axis=a,b,c;axis2=x,y"')
     ap.add_argument("--expect-increasing", nargs="*", default=None, help="Axes where the metric should increase")
@@ -73,12 +77,8 @@ def main(argv=None):
         t = read_csv(args.csv, metric_col=args.metric, entity_col=args.entity,
                      lower_is_better=lower, orders=_parse_orders(args.order),
                      ignore_cols=args.ignore)
-    except KeyError as e:
-        import csv as _csv
-        with open(args.csv, newline="") as _f:
-            header = next(_csv.reader(_f))
-        print(f"Error: column {e} not found. Available columns: {', '.join(header)}")
-        print("Tip: pass one with --metric, and use --ignore for columns to skip.")
+    except (KeyError, ValueError, IndexError) as e:
+        print(f"Error: {e}", file=sys.stderr)
         return 2
 
     expected = {}
@@ -94,7 +94,7 @@ def main(argv=None):
                           "lower_is_better": t.lower_is_better,
                           "flags": [f.to_dict() for f in flags]}, indent=2))
     else:
-        print(_fmt_report(flags, t.name))
+        print(_fmt_report(flags, t.name, t.metric_name, t.lower_is_better))
     return 0
 
 
