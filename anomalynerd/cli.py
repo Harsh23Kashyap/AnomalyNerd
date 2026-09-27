@@ -11,13 +11,25 @@ Examples:
 
 The tool POINTS at what deserves a closer look; it does not diagnose or re-run anything.
 """
-import argparse, json, sys
+import argparse, json, os, sys
 from textwrap import wrap
 from .ingest import read_csv
 from .analyze import analyze
 
 
-def _fmt_report(flags, table_name, metric_name, lower_is_better, width=82):
+def _style_line(line):
+    if line.startswith("ANOMALYNERD"):
+        return f"\033[1;36m{line}\033[0m"
+    if line[:2].isdigit() and "  HIGH " in line:
+        return f"\033[1;31m{line}\033[0m"
+    if line[:2].isdigit() and "  MEDIUM " in line:
+        return f"\033[1;33m{line}\033[0m"
+    if line[:2].isdigit() and "  LOW " in line:
+        return f"\033[2m{line}\033[0m"
+    return line
+
+
+def _fmt_report(flags, table_name, metric_name, lower_is_better, width=82, color=False):
     direction = "lower is better" if lower_is_better else "higher is better"
     counts = {p: sum(f.priority == p for f in flags) for p in ("HIGH", "MEDIUM", "LOW")}
     lines = ["ANOMALYNERD  /  RESULTS REVIEW",
@@ -27,7 +39,8 @@ def _fmt_report(flags, table_name, metric_name, lower_is_better, width=82):
              f"Flags    {len(flags)}  |  HIGH {counts['HIGH']}   MEDIUM {counts['MEDIUM']}   LOW {counts['LOW']}",
              "-" * width]
     if not flags:
-        return "\n".join(lines + ["No anomalies flagged. This is not a validation of the results."])
+        lines.append("No anomalies flagged. This is not a validation of the results.")
+        return "\n".join(_style_line(line) if color else line for line in lines)
     for i, f in enumerate(flags, 1):
         title = f.type.replace("_", " ").capitalize()
         if f.axis:
@@ -41,7 +54,7 @@ def _fmt_report(flags, table_name, metric_name, lower_is_better, width=82):
                           break_long_words=False, break_on_hyphens=False))
         lines.append("")
     lines.append("Flags point to checks, not proven errors.")
-    return "\n".join(lines)
+    return "\n".join(_style_line(line) if color else line for line in lines)
 
 
 def _parse_orders(spec):
@@ -94,7 +107,8 @@ def main(argv=None):
                           "lower_is_better": t.lower_is_better,
                           "flags": [f.to_dict() for f in flags]}, indent=2))
     else:
-        print(_fmt_report(flags, t.name, t.metric_name, t.lower_is_better))
+        use_color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None and os.environ.get("TERM") != "dumb"
+        print(_fmt_report(flags, t.name, t.metric_name, t.lower_is_better, color=use_color))
     return 0
 
 

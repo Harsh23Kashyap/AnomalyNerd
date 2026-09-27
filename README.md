@@ -25,11 +25,12 @@ python -m anomalynerd.cli results.csv --metric RMSE --json  # machine-readable o
 Known metrics such as RMSE and accuracy infer their direction. For ambiguous metrics (or
 wide-format tables with method names as columns), pass `--lower-better` or
 `--higher-better`. This avoids silently reversing winners. The text report
-shows the metric and chosen direction; `--json` remains machine-readable.
+shows the metric and chosen direction; TTY output adds subtle priority colors, while
+pipes, redirects, `NO_COLOR`, and `--json` remain plain and machine-readable.
 
 Run the tests:
 ```bash
-pytest -q          # 18 checks over synthetic, supplied datasets, and direction
+pytest -q          # 19 checks over synthetic, supplied datasets, and direction
 ```
 
 ---

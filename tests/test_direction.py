@@ -47,3 +47,15 @@ def test_cli_report_direction_and_json(tmp_path, capsys):
     assert data["lower_is_better"] is False
     with pytest.raises(SystemExit, match="2"):
         main([str(path), "--lower-better", "--higher-better"])
+
+
+def test_color_only_when_requested():
+    from anomalynerd.cli import _fmt_report
+    from anomalynerd.model import Flag
+    flag = Flag("point_outlier", "sample", "year", {}, {}, 8, 1, "HIGH", "Check this year.")
+    plain = _fmt_report([flag], "sample", "score", False)
+    color = _fmt_report([flag], "sample", "score", False, color=True)
+    import re
+    assert "\033[" not in plain
+    assert "\033[" in color
+    assert re.sub(r"\033\[[0-9;]*m", "", color) == plain
