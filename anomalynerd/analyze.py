@@ -83,7 +83,7 @@ def analyze(t: TidyTable, expected_monotonic: dict | None = None, expect_flat: l
     flags += detectors.detect_monotonicity(t, expected=expected_monotonic)
     flags += detectors.detect_cat_exceptions(t)
     flags += detectors.detect_duplicates_and_flatness(t)
-    flags += detectors.detect_level_shifts(t)
+    flags += detectors.detect_level_shifts(t, expect_flat=expect_flat)
     flags += detectors.detect_point_outliers(t)
     flags += detectors.detect_trends(t, index_axes=idx, expect_flat=expect_flat)
     flags = _suppress_index_axis(flags, idx)

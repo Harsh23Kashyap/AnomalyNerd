@@ -38,11 +38,18 @@ def _pattern_phrase_unscoped(f: Flag, t: TidyTable) -> str:
     m = t.metric_name
     ax = f.axis
     if f.type == "trend":
-        verb = "increases" if (d.get("slope", 0) > 0 or
-                               d.get("monotonic") in ("increasing", "non_decreasing")) else "decreases"
+        mono = d.get("monotonic")
+        if mono == "non_decreasing":
+            verb = "is non-decreasing"
+        elif mono == "non_increasing":
+            verb = "is non-increasing"
+        elif mono == "decreasing" or d.get("slope", 0) < 0:
+            verb = "decreases"
+        else:
+            verb = "increases"
         pear = d.get("pearson"); spear = d.get("spearman")
         start, end = d.get("start_value", "?"), d.get("end_value", "?")
-        phrase = f"{m} {verb} as {ax} increases"
+        phrase = (f"{m} {verb} as {ax} increases" if verb in ("increases","decreases") else f"{m} {verb} as {ax} increases (ties present)")
         if d.get("well_fit_by_line") and pear is not None:
             phrase += f" (roughly linear, Pearson r={pear})"
         elif spear is not None:

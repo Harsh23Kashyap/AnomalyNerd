@@ -102,7 +102,7 @@ def test_linear_relationship_wording():
     assert "roughly linear" in cap and "Pearson r=1.0" in cap
 
 
-def test_level_shift_is_description_not_auto_anomaly():
+def test_trend_is_description_not_auto_anomaly():
     """A plain level shift is a DESCRIPTION; the investigation prompt (and its reason) only
     appears when the axis was declared flat/random (expect_flat)."""
     from anomalynerd.model import Axis, TidyTable
@@ -135,3 +135,21 @@ def test_monotonic_endpoint_not_called_outlier():
                       [{"X": x, "value": y} for x, y in
                        zip(range(12), [1, 1, 1, 1, 1, 15, 1, 1, 1, 1, 1, 1])])
     assert any(f.type == "point_outlier" for f in analyze(spike)), "real spike must still flag"
+
+
+def test_level_shift_description_vs_judgment():
+    """A level shift is a description by default (LOW), and only becomes a HIGH investigation
+    prompt when its axis is declared flat/random (expect_flat). Covers the actual level_shift
+    path, not detect_trends."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+    rows = [{"X": x, "value": v} for x, v in
+            zip(range(0, 120, 10), [1, 1, 1, 1, 1, 1, 8, 8, 8, 8, 8, 8])]
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "RMSE", False, rows)
+    plain = [f for f in analyze(t) if f.type == "level_shift"]
+    assert plain, "a level shift should still be detected"
+    assert all(f.priority != "HIGH" for f in plain), "level shift is a description by default"
+    assert all("investigate" not in f.suggestion.lower() for f in plain)
+    flagged = [f for f in analyze(t, expect_flat=["X"]) if f.type == "level_shift"]
+    assert any(f.priority == "HIGH" for f in flagged), "expect_flat makes it a real finding"
+    assert any("you may want to investigate" in f.suggestion.lower() for f in flagged)

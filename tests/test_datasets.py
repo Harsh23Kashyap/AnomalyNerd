@@ -31,10 +31,13 @@ def _has(flags, typ, priority=None):
 def test_ozone_flags_high_level_shift():
     t = read_csv(os.path.join(EX, "halley_ozone_october.csv"),
                  metric_col="ozone_DU", lower_is_better=True)
-    flags = analyze(t)
+    # A level shift is a DESCRIPTION by default (a shift can be a legitimate response to the
+    # axis). It is an anomaly only when the axis is declared flat/random: ozone over years is
+    # expected to be stable, so the sustained drop (the ozone hole) is a real finding.
+    flags = analyze(t, expect_flat=["year"])
     ls = _by(flags, "level_shift")
     assert ls, "ozone must produce a level_shift"
-    assert any(f.priority == "HIGH" for f in ls), "ozone level_shift must be HIGH (flat baseline break)"
+    assert any(f.priority == "HIGH" for f in ls), "ozone level_shift must be HIGH when year is expect_flat"
     # baseline near 300, shift down to ~150-170
     f = [x for x in ls if x.priority == "HIGH"][0]
     assert f.detail["baseline_mean"] > 270

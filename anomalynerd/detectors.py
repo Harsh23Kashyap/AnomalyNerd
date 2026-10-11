@@ -327,7 +327,7 @@ ALL_DETECTORS = [
 
 # ---------------------------------------------------------------- T6
 def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
-                        z_thresh=3.0, persist=3):
+                        z_thresh=3.0, persist=3, expect_flat=None):
     """Flag a SUSTAINED departure from an early stable baseline (a regime/level shift).
 
     This is the ozone-hole pattern: a long-stable series (baseline mean +/- spread)
@@ -337,6 +337,7 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
     that sit > z_thresh baseline-SDs away for >= `persist` consecutive steps are flagged.
     """
     from statistics import mean, pstdev
+    expect_flat = set(expect_flat or [])
     flags = []
     for ax_name, ax in t.axes.items():
         if ax.kind != "numeric":
@@ -402,11 +403,22 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
                 else:
                     conf = "clear"; supp = 1.0
                     kind = f"holds ~{mu:.0f}"
+                # DESCRIPTION vs JUDGMENT: a level shift is a legitimate response to the axis
+                # (e.g. dose) by default, so it is DESCRIBED, not called an anomaly. It becomes
+                # an investigation prompt only when the axis was declared flat/random.
+                ax_expected_flat = ax_name in expect_flat
+                if not baseline_is_trend and not ax_expected_flat:
+                    supp = 0.3   # describe only; the scorer keeps this LOW (not an anomaly)
+                tail = (" — likely just a continuing/accelerating trend; low confidence."
+                        if baseline_is_trend else
+                        (" — this axis was expected to be flat or random, so you may want to "
+                         "investigate." if ax_expected_flat else "."))
                 flags.append(Flag(
                     type="level_shift", table=t.name, axis=ax_name, coords=fixed,
                     detail={"baseline_mean": round(mu, 2), "baseline_sd": round(ref_sd, 2),
                             "baseline_span": [pts[0][0], pts[nb - 1][0]],
                             "baseline_trend": bool(baseline_is_trend), "confidence": conf,
+                            "expected_flat": bool(ax_expected_flat),
                             "shifted_mean": round(shifted_mean, 2),
                             "shift_span": [best_run[0][0], best_run[-1][0]],
                             "n_persist": len(best_run), "z": round(z, 1)},
@@ -414,9 +426,7 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
                     suggestion=(f"{t.metric_name} {kind} (baseline "
                                 f"{pts[0][0]}-{pts[nb-1][0]}) then sits ~{shifted_mean:.0f} "
                                 f"from {best_run[0][0]} onward ({z:.0f} SDs, {len(best_run)} points)"
-                                + (" — likely just a continuing/accelerating trend; low confidence."
-                                   if baseline_is_trend else
-                                   " — sustained departure from a stable baseline; worth investigating.")),
+                                + tail),
                 ))
     return flags
 
