@@ -262,7 +262,7 @@ def digit_tests(tidy, min_values: int = 30) -> list:
             findings.append(StatFinding("benford", "ok",
                 f"leading-digit distribution is consistent with Benford's law (p={p:.2f})",
                 evidence={"n": n}))
-    
+
     # terminal digit: the LAST reported digit of measured values should be roughly uniform
     # over 0-9. A strong departure can signal rounding habits or fabrication. We use only
     # values that carry decimals (so the last digit is genuinely a measured digit).

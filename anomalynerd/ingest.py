@@ -249,7 +249,7 @@ def read_tables(path, **kwargs):
         return ints == sorted(ints) and (ints[-1] - ints[0]) <= 2 * len(ints)
 
     metric_numeric = [h for h in numeric_cols if not _idx_like(h)]
-    named_metrics = [h for h in numeric_cols if h in metric_by_name or h.lower() in {"ratio", "count", "big_count", "small_metric"}]
+    named_metrics = [h for h in numeric_cols if h in metric_by_name or any(w in h.lower().split("_") for w in ("ratio", "count", "metric"))]
     # Named metrics are outputs, even when monotonic or similar in scale.
     # The old sweep heuristic incorrectly removed improving accuracy curves.
     if kwargs.get("metric_col") is None and len(named_metrics) >= 2:
