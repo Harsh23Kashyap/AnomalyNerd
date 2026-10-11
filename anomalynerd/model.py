@@ -92,4 +92,4 @@ class Flag:
 
 
 def is_num(x) -> bool:
-    return isinstance(x, (int, float)) and not (isinstance(x, float) and math.isnan(x))
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
