@@ -38,10 +38,17 @@ def _pattern_phrase_unscoped(f: Flag, t: TidyTable) -> str:
     m = t.metric_name
     ax = f.axis
     if f.type == "trend":
-        direction = "increases" if d.get("slope", 0) > 0 else "decreases"
-        return (f"{m} {direction} with {ax} "
-                f"(from {d.get('start_value', '?')} to {d.get('end_value', '?')}, "
-                f"$R^2={d.get('r2', '?')}$)")
+        verb = "increases" if (d.get("slope", 0) > 0 or
+                               d.get("monotonic") in ("increasing", "non_decreasing")) else "decreases"
+        pear = d.get("pearson"); spear = d.get("spearman")
+        start, end = d.get("start_value", "?"), d.get("end_value", "?")
+        phrase = f"{m} {verb} as {ax} increases"
+        if d.get("well_fit_by_line") and pear is not None:
+            phrase += f" (roughly linear, Pearson r={pear})"
+        elif spear is not None:
+            phrase += (f" (monotonic, Spearman rho={spear}; not well described by a "
+                       f"straight line" + (f", Pearson r={pear}" if pear is not None else "") + ")")
+        return phrase + f", from {start} to {end}"
     if f.type == "level_shift":
         bm = d.get("baseline_mean"); span = d.get("baseline_span")
         return (f"{m} holds near {bm} over {ax}={span[0]:g}--{span[1]:g} and then shifts to a "
@@ -104,18 +111,21 @@ def generate_caption(t: TidyTable, flags=None, level: str = "medium",
     else:
         base = f"{subject}."
 
-    salient = [f for f in flags if f.priority in ("HIGH", "MEDIUM")]
-    # A caption should describe the table's PATTERN. Flatness/duplicate flags are
-    # data-quality notes about an auxiliary column (e.g. a constant uncertainty column),
-    # not a pattern in the measured metric, so they are not used to drive the caption's
-    # main clause; they only appear in the detailed "Also:" tail if nothing else is there.
-    pattern_kinds = ("trend", "level_shift", "numeric_jump", "win_reversal",
-                     "monotonicity", "cat_exception", "point_outlier")
-    main = [f for f in salient if f.type in pattern_kinds]
-    aux = [f for f in salient if f.type not in pattern_kinds]
-    # order: HIGH before MEDIUM, then by strength
-    main.sort(key=lambda f: (0 if f.priority == "HIGH" else 1, -float(f.strength or 0)))
-    salient = main  # the caption describes substantive patterns only
+    # Separate DESCRIPTION from JUDGMENT (per the design): relationship-style patterns
+    # (a trend, a level shift, a monotonic relationship, a win reversal, a category exception)
+    # are DESCRIPTIONS of the table and are worth stating even when they are not flagged as an
+    # anomaly (LOW priority). Point-like anomalies (numeric_jump, point_outlier) are only
+    # described when the scorer actually promoted them to HIGH/MEDIUM. Flatness/duplicate are
+    # data-quality notes, kept out of the main clause.
+    descriptive_kinds = ("trend", "level_shift", "monotonicity", "win_reversal", "cat_exception")
+    anomaly_only_kinds = ("numeric_jump", "point_outlier")
+    main = [f for f in flags
+            if (f.type in descriptive_kinds)
+            or (f.type in anomaly_only_kinds and f.priority in ("HIGH", "MEDIUM"))]
+    # order: HIGH before MEDIUM before LOW, then by strength
+    _rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    main.sort(key=lambda f: (_rank.get(f.priority, 3), -float(f.strength or 0)))
+    salient = main  # the caption describes substantive patterns and promoted anomalies
 
     def _assemble(lvl):
         parts = [base]

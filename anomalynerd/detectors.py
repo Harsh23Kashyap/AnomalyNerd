@@ -235,7 +235,7 @@ def detect_cat_exceptions(t: TidyTable, min_support=4):
                     strength=wins / total,
                     support=wins / total,
                     suggestion=f"'{hi}' usually ranks better than '{lo}' ({wins}/{total}); "
-                               f"{fails} exception(s) — worth a look.",
+                               f"{fails} exception(s) — you may want to investigate.",
                 ))
     return flags
 
@@ -469,6 +469,62 @@ def _lin_fit(xs, ys):
     return slope, intercept, (pstdev(resid) if len(resid) > 1 else 0.0)
 
 
+def _pearson(xs, ys):
+    """Pearson linear correlation r in [-1, 1], or None if either series is constant
+    (correlation with a no-variance series is undefined)."""
+    from statistics import mean
+    n = len(xs)
+    if n < 2:
+        return None
+    mx = mean(xs); my = mean(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        return None
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    return sxy / (sxx ** 0.5 * syy ** 0.5)
+
+
+def _rank(values):
+    """Average (fractional) ranks, so ties share the mean of the ranks they span."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        avg = (i + j) / 2.0 + 1.0            # 1-based average rank for the tie block
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg
+        i = j + 1
+    return ranks
+
+
+def _spearman(xs, ys):
+    """Spearman rank correlation rho in [-1, 1] (monotonic association), or None if either
+    series is constant. Uses average ranks so ties are handled correctly."""
+    if len(xs) < 2:
+        return None
+    return _pearson(_rank(xs), _rank(ys))
+
+
+def _monotonic_direction(ys):
+    """Classify the series as strictly/weakly increasing, decreasing, or neither, from the
+    sign of its consecutive differences. 'non_decreasing'/'non_increasing' allow ties."""
+    diffs = [b - a for a, b in zip(ys, ys[1:])]
+    if not diffs:
+        return "flat"
+    pos = sum(1 for d in diffs if d > 0)
+    neg = sum(1 for d in diffs if d < 0)
+    zero = sum(1 for d in diffs if d == 0)
+    if neg == 0 and pos > 0:
+        return "increasing" if zero == 0 else "non_decreasing"
+    if pos == 0 and neg > 0:
+        return "decreasing" if zero == 0 else "non_increasing"
+    return "none"
+
+
 ALL_DETECTORS.append(detect_level_shifts)
 
 
@@ -503,7 +559,17 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
             if len(pts) < min_points:
                 continue
             xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-            # ---- leverage mode (Anscombe IV): axis nearly constant except one point ----
+            # MONOTONIC-RELATIONSHIP GUARD (description vs judgment): if y rises or falls
+            # monotonically with x (high |Spearman|), then a point being far from the others is
+            # explained by the relationship itself, not an anomaly. A monotonic climb's top point
+            # is the end of a trend, not an outlier. Suppress point-outlier on such a slice; the
+            # trend/relationship detector describes it instead.
+            if len(set(xs)) >= 2:
+                _rho = _spearman(xs, ys)
+                _mono = _monotonic_direction(ys)
+                if (_rho is not None and abs(_rho) >= 0.9
+                        and _mono in ("increasing", "decreasing", "non_decreasing", "non_increasing")):
+                    continue
             # If almost all x share one value and a single point sits at a far-off x, that
             # lone point has extreme leverage (it alone determines any fitted slope). Flag it.
             xcount = {}
@@ -554,7 +620,7 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                         strength=8.0, support=1.0,
                         suggestion=f"Single {t.metric_name} value {pts[i][1]:g} at {ax_name}={pts[i][0]:g} "
                                    f"stands out from the rest (which cluster near {core_center:g}) "
-                                   f"— check it.",
+                                   f"— you may want to investigate.",
                     ))
                 continue
             # residuals from a linear fit (falls back to median if x is ~constant)
@@ -593,7 +659,7 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                                 "peers_median": round(median(ys), 3)},
                         strength=z, support=1.0,
                         suggestion=f"Single {t.metric_name} value {pts[i][1]:g} at {ax_name}={pts[i][0]:g} "
-                                   f"is far from the rest ({z:.0f} robust-SDs) — lone outlier, check it.",
+                                   f"is far from the rest ({z:.0f} robust-SDs) — lone outlier — you may want to investigate.",
                     ))
 
     # ---- categorical mode: an ablation-style table (one metric value per category) ----
@@ -641,7 +707,7 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                                 "log_scale": is_log},
                         strength=8.0, support=1.0,
                         suggestion=f"Single {t.metric_name} value {v:g} at {ax_name}='{lv}' "
-                                   f"stands out from the rest — check it.",
+                                   f"stands out from the rest — you may want to investigate.",
                     ))
 
     # ---- whole-table pass: a lone GROSS outlier in a table whose slices are each too small
@@ -654,6 +720,24 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
         allvals = [(r, r.get("value")) for r in t.rows
                    if isinstance(r.get("value"), (int, float))]
         ys = [v for _, v in allvals]
+        # MONOTONIC GUARD: if the table is a single ordered series and y moves monotonically
+        # along that axis, a lone "gross" value is the end of a monotonic climb/fall, not an
+        # anomaly. Skip the whole-table outlier pass and let the trend detector describe it.
+        _skip_mono = False
+        num_axes = [a for a, ax in t.axes.items() if ax.kind in ("numeric", "ordered_cat")]
+        if len(num_axes) == 1 and len(ys) >= 5:
+            ax0 = num_axes[0]
+            ser = [(r.get(ax0), v) for r, v in allvals if is_num(r.get(ax0))]
+            if len(ser) >= 5:
+                ser.sort(key=lambda p: float(p[0]))
+                sy = [v for _, v in ser]
+                rho = _spearman([float(x) for x, _ in ser], sy)
+                if (rho is not None and abs(rho) >= 0.9
+                        and _monotonic_direction(sy) in ("increasing", "decreasing",
+                                                          "non_decreasing", "non_increasing")):
+                    _skip_mono = True
+        if _skip_mono:
+            ys = []  # disable the pass for this monotonic table
         if len(ys) >= 5:
             ys_eval, is_log = _logspace_if_wide(ys)
             srt = sorted(ys_eval)
@@ -677,7 +761,7 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                     detail={"value": v, "mode": "whole_table", "log_scale": is_log},
                     strength=9.0, support=1.0,
                     suggestion=f"Single {t.metric_name} value {v:g} at {coords} stands out "
-                               f"grossly from every other value in the table — check it.",
+                               f"grossly from every other value in the table — you may want to investigate.",
                 ))
     return flags
 
@@ -731,30 +815,62 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
                 continue
             r2 = max(0.0, 1.0 - (resid_sd ** 2) / var)
             total_change = slope * (xs[-1] - xs[0])
-            # require a strong fit AND a change that spans a real fraction of the value range
             rng = max(ys) - min(ys) or 1.0
-            if r2 >= r2_min and abs(total_change) > 0.5 * rng:
-                direction = "declines" if slope < 0 else "rises"
+            # Linear strength (Pearson) and monotonic association (Spearman) are DIFFERENT
+            # questions. A relationship can be perfectly monotonic yet poorly linear
+            # (e.g. y rises every step but one huge last value makes Pearson low while
+            # Spearman stays 1.0). Report both, and the plain direction of the monotonic step
+            # pattern (ties -> non-decreasing/non-increasing).
+            pearson = _pearson(xs, ys)
+            spearman = _spearman(xs, ys)
+            mono = _monotonic_direction(ys)
+            is_monotonic = mono in ("increasing", "decreasing", "non_decreasing", "non_increasing")
+            strong_linear = r2 >= r2_min and abs(total_change) > 0.5 * rng
+            # Emit a relationship pattern when the series is either a strong linear trend OR a
+            # clear monotonic relationship (|Spearman| high) that spans a real part of the range.
+            strong_monotonic = (is_monotonic and spearman is not None
+                                and abs(spearman) >= 0.9 and abs(ys[-1] - ys[0]) > 0.5 * rng)
+            if strong_linear or strong_monotonic:
+                direction = "declines" if (slope < 0 or mono in ("decreasing", "non_increasing")) else "rises"
                 is_expected_flat = ax_name in expect_flat
-                # support drives priority: expected-flat trend = real finding; otherwise a
-                # low-confidence candidate (the tool can't know if the trend is expected).
+                # DESCRIPTION vs JUDGMENT: a relationship is just a description. It becomes an
+                # anomaly (an investigation prompt) ONLY when the axis was declared flat/random.
                 supp = 1.0 if is_expected_flat else 0.3
-                tail = (f"but {ax_name} is expected to be flat/random — investigate."
-                        if is_expected_flat else
-                        f"if {ax_name} should be flat/random, investigate (otherwise this is "
-                        f"just the expected relationship).")
+                well_linear = pearson is not None and abs(pearson) >= 0.95
                 flags.append(Flag(
                     type="trend", table=t.name, axis=ax_name, coords=fixed,
                     detail={"slope": round(slope, 3), "r2": round(r2, 3),
+                            "pearson": None if pearson is None else round(pearson, 3),
+                            "spearman": None if spearman is None else round(spearman, 3),
+                            "monotonic": mono, "well_fit_by_line": bool(well_linear),
                             "from": pts[0][2], "to": pts[-1][2],
                             "start_value": round(ys[0], 2), "end_value": round(ys[-1], 2),
                             "expected_flat": is_expected_flat},
                     strength=r2,
                     support=supp,
-                    suggestion=f"{t.metric_name} steadily {direction} along {ax_name} "
-                               f"(~{ys[0]:.0f} to ~{ys[-1]:.0f}, R²={r2:.2f}); " + tail,
+                    suggestion=_relationship_suggestion(
+                        t.metric_name, ax_name, direction, ys, pearson, spearman,
+                        well_linear, is_expected_flat),
                 ))
     return flags
+
+
+def _relationship_suggestion(metric, ax_name, direction, ys, pearson, spearman,
+                             well_linear, is_expected_flat):
+    """Describe the relationship first; only append an investigation prompt (with a reason)
+    when the axis was expected to be flat. Keeps description separate from judgment."""
+    verb = "increases" if direction == "rises" else "decreases"
+    desc = f"{metric} {verb} as {ax_name} increases"
+    if pearson is not None:
+        if well_linear:
+            desc += f" (roughly linear, Pearson r={pearson:.2f})"
+        elif spearman is not None:
+            desc += (f" (monotonic, Spearman rho={spearman:.2f}; "
+                     f"not well described by a straight line, Pearson r={pearson:.2f})")
+    desc += f"; {metric} goes from {ys[0]:.0f} to {ys[-1]:.0f}."
+    if is_expected_flat:
+        desc += f" {ax_name} was expected to be flat or random, so you may want to investigate."
+    return desc
 
 
 ALL_DETECTORS.append(detect_trends)

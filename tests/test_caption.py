@@ -57,7 +57,8 @@ def test_caption_keeps_case_and_fixed_coordinates():
                 {"slope": 1, "start_value": 1, "end_value": 5, "r2": 1},
                 1, 1, "HIGH")
     caption = generate_caption(table, [flag])
-    assert "RMSE increases with N" in caption
+    # relationship wording (description form); the metric and axis names are preserved
+    assert "RMSE increases as N increases" in caption
     assert "method=CNN" in caption
     assert "Rmse" not in caption and "method=cnn" not in caption
 
@@ -70,3 +71,67 @@ def test_caption_jump_uses_detector_endpoints():
     flag = Flag("numeric_jump", "jump", "N", {},
                 {"from": 10, "to": 20, "values": [1, 12]}, 12, 1, "HIGH")
     assert "between N=10 and N=20" in generate_caption(table, [flag])
+
+
+def test_monotonic_not_linear_relationship():
+    """A perfectly monotonic but non-linear series is described as monotonic (Spearman),
+    not as a straight line, and reports both coefficients."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.detectors import detect_trends
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "Y", False,
+                  [{"X": x, "value": y} for x, y in
+                   zip([1, 2, 3, 4, 5, 6, 7, 8], [1, 2, 3, 4, 5, 6, 7, 10000])])
+    flags = detect_trends(t)
+    assert flags, "a monotonic relationship should be detected even with weak linear fit"
+    d = flags[0].detail
+    assert abs(d["spearman"] - 1.0) < 1e-6          # perfectly monotonic
+    assert d["pearson"] < 0.7                        # but not linear
+    assert d["well_fit_by_line"] is False
+    cap = generate_caption(t, flags, level="medium")
+    assert "monotonic" in cap and "not well described by a straight line" in cap
+
+
+def test_linear_relationship_wording():
+    """A near-perfect linear series is described as roughly linear with Pearson r."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.detectors import detect_trends
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "RMSE", False,
+                  [{"X": x, "value": y} for x, y in
+                   zip(range(0, 80, 10), [1, 2, 3, 4, 5, 6, 7, 8])])
+    cap = generate_caption(t, detect_trends(t), level="medium")
+    assert "roughly linear" in cap and "Pearson r=1.0" in cap
+
+
+def test_level_shift_is_description_not_auto_anomaly():
+    """A plain level shift is a DESCRIPTION; the investigation prompt (and its reason) only
+    appears when the axis was declared flat/random (expect_flat)."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.detectors import detect_trends
+    rows = [{"X": x, "value": y} for x, y in
+            zip(range(0, 80, 10), [1, 2, 3, 4, 5, 6, 7, 8])]
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "RMSE", False, rows)
+    # without expect_flat: described, no investigation prompt
+    plain = detect_trends(t)[0].suggestion
+    assert "investigate" not in plain.lower()
+    # with expect_flat: the reason-stated investigation prompt appears
+    flat = detect_trends(t, expect_flat={"X"})[0].suggestion
+    assert "you may want to investigate" in flat.lower()
+    assert "expected to be flat" in flat.lower()
+
+
+def test_monotonic_endpoint_not_called_outlier():
+    """A monotonic series' extreme endpoint is described as a relationship, NOT flagged as a
+    point outlier; a genuine interior spike in a flat series still is an outlier."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+    # monotonic climb with a big last value: relationship, not outlier
+    mono = TidyTable("m", {"X": Axis("X", "numeric")}, None, "Y", False,
+                     [{"X": x, "value": y} for x, y in
+                      zip([1, 2, 3, 4, 5, 6, 7, 8], [1, 2, 3, 4, 5, 6, 7, 10000])])
+    kinds = {f.type for f in analyze(mono) if f.priority in ("HIGH", "MEDIUM")}
+    assert "point_outlier" not in kinds, "monotonic endpoint must not be a HIGH outlier"
+    # genuine interior spike in an otherwise flat series: still an outlier
+    spike = TidyTable("s", {"X": Axis("X", "numeric")}, None, "Y", False,
+                      [{"X": x, "value": y} for x, y in
+                       zip(range(12), [1, 1, 1, 1, 1, 15, 1, 1, 1, 1, 1, 1])])
+    assert any(f.type == "point_outlier" for f in analyze(spike)), "real spike must still flag"
