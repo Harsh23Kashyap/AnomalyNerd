@@ -46,6 +46,32 @@ def _other_axis_combos(t: TidyTable, along: str):
         yield dict(zip(others, combo))
 
 
+def _jump_is_endpoint_of_climb(ys, jump_index):
+    """True when the step at `jump_index` is the FINAL step of an otherwise steady monotonic
+    climb/fall: the jump dwarfs the other steps, those other steps are a tight same-direction
+    progression, and the jump is terminal. This distinguishes a smooth climb that ends in a
+    blow-up (7 -> 10000: describe as the relationship's endpoint) from a genuine jump such as a
+    jump-then-plateau (1.6 -> 196 -> 209 -> 214: a real anomaly to keep). Deliberately strict:
+    an ACCELERATING series (each step bigger) fails the 'steady others' test and stays a jump."""
+    from statistics import median, pstdev, mean
+    steps = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)]
+    if len(steps) < 2 or jump_index != len(steps) - 1:
+        return False                                   # must be the terminal step
+    abs_steps = [abs(s) for s in steps]
+    others = [abs_steps[i] for i in range(len(abs_steps)) if i != jump_index]
+    med_other = median(others) if others else 0.0
+    if not (med_other == 0.0 or max(abs_steps) > 8 * med_other):
+        return False                                   # jump must dwarf the other steps
+    other_signed = [steps[i] for i in range(len(steps)) if i != jump_index]
+    if len({s > 0 for s in other_signed if s != 0}) > 1:
+        return False                                   # other steps must share one direction
+    m = mean(other_signed) if other_signed else 0.0
+    if steps[jump_index] * m <= 0:
+        return False                                   # final jump must continue the same direction
+    cv = (pstdev(other_signed) / abs(m)) if other_signed and m != 0 else 999.0
+    return cv < 0.5                                     # ...and be a tight, consistent climb
+
+
 # ---------------------------------------------------------------- T1
 def detect_numeric_jumps(t: TidyTable, k_mad=4.0, ratio=3.0, min_points=3):
     """Flag adjacent steps along a numeric axis that jump far more than the typical step."""
@@ -78,17 +104,25 @@ def detect_numeric_jumps(t: TidyTable, k_mad=4.0, ratio=3.0, min_points=3):
                 big = (trend_dev > k_mad) and (r >= ratio)
                 if big:
                     mids = _suggest_midpoints(a, b)
+                    ys_slice = [v for _, v in pts]
+                    endpoint_climb = _jump_is_endpoint_of_climb(ys_slice, i)
                     flags.append(Flag(
                         type="numeric_jump", table=t.name, axis=ax_name,
                         coords=fixed,
                         detail={"from": a, "to": b, "values": [va, vb],
                                 "ratio": round(r, 2), "step": round(step, 3),
                                 "typical_step": round(typ, 3),
-                                "trend_dev_sd": round(trend_dev, 1)},
+                                "trend_dev_sd": round(trend_dev, 1),
+                                "in_monotonic_relationship": endpoint_climb},
                         strength=r if r != float("inf") else 999.0,
                         support=1.0,
-                        suggestion=f"Large jump in {t.metric_name} between {ax_name}={a} and {ax_name}={b}"
-                                   + (f"; consider testing {ax_name}={mids}." if mids else "."),
+                        suggestion=(
+                            f"{t.metric_name} rises steeply at the end of a steady climb between "
+                            f"{ax_name}={a} and {ax_name}={b} (the endpoint of the relationship, "
+                            f"not a separate anomaly)."
+                            if endpoint_climb else
+                            f"Large jump in {t.metric_name} between {ax_name}={a} and {ax_name}={b}"
+                            + (f"; consider testing {ax_name}={mids}." if mids else ".")),
                     ))
     return flags
 

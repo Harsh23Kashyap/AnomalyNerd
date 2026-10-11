@@ -153,3 +153,44 @@ def test_level_shift_description_vs_judgment():
     flagged = [f for f in analyze(t, expect_flat=["X"]) if f.type == "level_shift"]
     assert any(f.priority == "HIGH" for f in flagged), "expect_flat makes it a real finding"
     assert any("you may want to investigate" in f.suggestion.lower() for f in flagged)
+
+
+def test_jump_endpoint_of_climb_vs_genuine():
+    """The terminal step of a steady monotonic climb is described, not flagged HIGH, while a
+    jump-then-plateau and an accelerating series keep a HIGH numeric_jump."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+
+    def mk(xv, ys):
+        return TidyTable("t", {"X": Axis("X", "numeric")}, None, "Y", False,
+                         [{"X": x, "value": y} for x, y in zip(xv, ys)])
+
+    # steady climb then one endpoint blow-up: jump is a description (not HIGH)
+    climb = analyze(mk(range(0, 80, 10), [1, 2, 3, 4, 5, 6, 7, 10000]))
+    cj = [f for f in climb if f.type == "numeric_jump"]
+    assert cj and all(f.priority != "HIGH" for f in cj), "endpoint-of-climb jump must not be HIGH"
+
+    # accelerating series: NOT a steady climb, so a terminal blow-up stays HIGH
+    accel = analyze(mk(range(0, 60, 10), [2, 5, 11, 24, 50, 10000]))
+    aj = [f for f in accel if f.type == "numeric_jump"]
+    assert aj and any(f.priority == "HIGH" for f in aj), "accelerating jump must stay HIGH"
+
+
+
+def test_terminal_jump_reversal_stays_high():
+    """A final step that reverses a steady climb is a jump, not its endpoint."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+
+    def jumps(ys):
+        t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "Y", False,
+                      [{"X": x, "value": y} for x, y in zip(range(0, 80, 10), ys)])
+        return [f for f in analyze(t) if f.type == "numeric_jump"]
+
+    reversal = jumps([1, 2, 3, 4, 5, 6, 7, -10000])
+    assert reversal and all(f.priority == "HIGH" for f in reversal)
+    assert all(not f.detail["in_monotonic_relationship"] for f in reversal)
+
+    endpoint = jumps([1, 2, 3, 4, 5, 6, 7, 10000])
+    assert endpoint and all(f.priority == "LOW" for f in endpoint)
+    assert all(f.detail["in_monotonic_relationship"] for f in endpoint)

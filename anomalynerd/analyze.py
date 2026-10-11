@@ -10,7 +10,10 @@ def score(flags: list[Flag]) -> list[Flag]:
         s = f.strength
         sup = f.support
         if f.type == "numeric_jump":
-            hi = s >= 10; med = s >= 3
+            if f.detail.get("in_monotonic_relationship"):
+                hi = med = False   # endpoint of a steady climb: describe only, relationship leads
+            else:
+                hi = s >= 10; med = s >= 3
         elif f.type == "win_reversal":
             hi = s >= 3; med = s >= 2
         elif f.type == "cat_exception":
