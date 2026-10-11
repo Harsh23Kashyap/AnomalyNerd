@@ -122,6 +122,12 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
             idx_cols = list(cat_cols)
         else:
             idx_cols = [header[0]]
+        # An index-like numeric column (a rank/row number such as '#' or 'No.': sorted,
+        # consecutive integers) is a grid axis, never an entity. Keep it as an index column so
+        # it is NOT melted into the entity set as a bogus "method".
+        for h in index_like:
+            if h not in idx_cols:
+                idx_cols.append(h)
         entity_cols = [h for h in numeric_cols if h not in idx_cols]
         if not entity_cols:                        # safety: fall back to treating last col as metric (LONG)
             metric_col = numeric_cols[-1]
@@ -196,8 +202,8 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
 
 
 def _median_scale(values):
-    nums = [abs(_parse_number(v)) for v in values]
-    nums = [x for x in nums if x is not MISSING and x != 0]
+    parsed = [_parse_number(v) for v in values]
+    nums = [abs(x) for x in parsed if x is not MISSING and x != 0]
     if not nums:
         return None
     nums.sort()

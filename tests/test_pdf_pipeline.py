@@ -208,3 +208,13 @@ def test_extracted_table_has_backend_field():
     from anomalynerd.pdf_ingest import ExtractedTable
     et = ExtractedTable(page=1, index_on_page=0, n_rows=3, n_cols=2, status="skipped")
     assert et.backend == "pdfplumber", "default backend should be pdfplumber"
+
+
+def test_latex_mean_std_cells_keep_central_value():
+    """A bare plus/minus command followed by a digit must not fuse mean and spread."""
+    from anomalynerd.latex_ingest import _clean_cell
+    for cell in (r"0.689\pm0.089", r"0.689{\pm}0.089", r"0.689\pm 0.089",
+                 "0.689±0.089", "0.689∓0.089", "0.689+-0.089"):
+        assert _clean_cell(cell) == "0.689", cell
+    # A longer LaTeX control word beginning with pm is not the plus/minus command.
+    assert _clean_cell(r"0.689\pmod{2}") == "0.6892"

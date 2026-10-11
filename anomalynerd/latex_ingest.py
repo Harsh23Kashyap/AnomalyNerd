@@ -78,13 +78,29 @@ def _clean_cell(c: str) -> str:
     # cell color / rule commands
     s = re.sub(r"\\cellcolor\s*(\[[^\]]*\])?\s*\{[^}]*\}", "", s)
     s = re.sub(r"\\(rowcolor|hline|toprule|midrule|bottomrule|cline|cmidrule)\b(\s*\{[^}]*\}|\[[^\]]*\])*", "", s)
+    # Uncertainty / plus-minus -> a normalized sentinel, handled AFTER brace/macro removal.
+    # The spread is written many ways: \pm, {\pm}, ±, ∓, ascii "+-". Normalize them all now,
+    # BEFORE the generic macro strip (which would otherwise delete \pm and fuse the numbers).
+    s = re.sub(r"\{\s*\\pm\s*\}", " \u00b1 ", s)   # brace-wrapped {\pm}
+    s = re.sub(r"\\pm(?![a-zA-Z])", " \u00b1 ", s)             # bare \pm
+    s = re.sub(r"[\u00b1\u2213]", " \u00b1 ", s)     # unicode ± / ∓
+    s = re.sub(r"(?<=\d)\s*\+\s*-\s*(?=\d)", " \u00b1 ", s)  # ascii "+-" between digits
     # strip any remaining simple commands (keep their trailing text)
     s = re.sub(r"\\[a-zA-Z]+\*?", "", s)
     s = s.replace("{", "").replace("}", "")
     # unescape common escaped characters
     s = s.replace("\\_", "_").replace("\\#", "#").replace("\\$", "$").replace("\\^", "^")
-    # +/- and uncertainty: keep the first number ("12.3 \pm 0.4" -> "12.3")
-    s = s.replace("\\pm", " ").replace("±", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    # FINAL: if the cell is "<central value> ± <spread> ...", keep only the central value.
+    m = re.match(r"^(-?\d+(?:\.\d+)?)\s*\u00b1", s)
+    if m:
+        return m.group(1)
+    s = s.replace("\u00b1", " ")
+    # Also collapse a residual "<num> <num>" (central + spread with the sign already lost in
+    # parsing) to the first number, so a mean/std pair does not read as non-numeric.
+    m = re.match(r"^(-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?\s*$", s)
+    if m:
+        return m.group(1)
     return re.sub(r"\s+", " ", s).strip()
 
 

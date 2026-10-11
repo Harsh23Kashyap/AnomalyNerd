@@ -2,7 +2,7 @@
 
 Goal: run the other tools (paperguard, Great Expectations) on the SAME tables,
 tabulate what each flags vs AnomalyNerd, and do a paired statistical test
-(paired sign-flip permutation test, Shasha & Wilson, 'Statistics is Easy!').
+(a paired sign-flip permutation test).
 
 Shared per-item task: the ground-truth planted-anomaly benchmark. For each real table we plant
 one known anomaly at a known cell, then ask each tool whether it CATCHES that planted anomaly.
@@ -115,7 +115,7 @@ def _ge_hit(tidy):
 
 
 def _paired_sign_flip(a, b, iters=10000, seed=0):
-    """Paired sign-flip permutation test (Shasha & Wilson). a,b are per-item 0/1 hit vectors.
+    """Paired sign-flip permutation test. a,b are per-item 0/1 hit vectors.
     Statistic = mean(a) - mean(b). Under H0 the paired difference's sign is random; we flip
     each paired difference's sign at random and count how often |permuted mean| >= |observed|."""
     rng = random.Random(seed)
