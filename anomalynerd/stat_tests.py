@@ -237,25 +237,31 @@ def digit_tests(tidy, min_values: int = 30) -> list:
             f"only {len(nz)} numeric values in this table; a terminal-digit test needs at "
             f"least {min_values} to be meaningful"))
         return findings
-    # leading digit
-    lead = []
-    for v in nz:
-        d = int(str(f"{v:.10e}")[0])   # first significant digit
-        if 1 <= d <= 9:
-            lead.append(d)
-    obs = Counter(lead); n = len(lead)
-    exp = {d: _BENFORD[d] * n for d in range(1, 10)}
-    chi2 = sum((obs.get(d, 0) - exp[d])**2 / exp[d] for d in range(1, 10))
-    p = _st.chi2.sf(chi2, df=8)
-    if p < 0.01:
-        findings.append(StatFinding("benford", "finding",
-            f"leading-digit distribution departs from Benford's law (chi2={chi2:.1f}, "
-            f"p={p:.3f}); may be natural for bounded data, but worth a look",
-            severity="low", evidence={"n": n, "chi2": round(chi2, 2), "p": round(p, 4)}))
+    # Benford is not appropriate for narrow/bounded scales such as accuracy.
+    # Also require adequate expected counts for every chi-square cell.
+    if max(nz) / min(nz) < 100 or len(nz) * _BENFORD[9] < 5:
+        findings.append(StatFinding("benford", "not_applicable",
+            "values do not span two orders of magnitude or expected digit counts are below five"))
     else:
-        findings.append(StatFinding("benford", "ok",
-            f"leading-digit distribution is consistent with Benford's law (p={p:.2f})",
-            evidence={"n": n}))
+        # leading digit
+        lead = []
+        for v in nz:
+            d = int(str(f"{v:.10e}")[0])   # first significant digit
+            if 1 <= d <= 9:
+                lead.append(d)
+        obs = Counter(lead); n = len(lead)
+        exp = {d: _BENFORD[d] * n for d in range(1, 10)}
+        chi2 = sum((obs.get(d, 0) - exp[d])**2 / exp[d] for d in range(1, 10))
+        p = _st.chi2.sf(chi2, df=8)
+        if p < 0.01:
+            findings.append(StatFinding("benford", "finding",
+                f"leading-digit distribution departs from Benford's law (chi2={chi2:.1f}, "
+                f"p={p:.3f}); may be natural for bounded data, but worth a look",
+                severity="low", evidence={"n": n, "chi2": round(chi2, 2), "p": round(p, 4)}))
+        else:
+            findings.append(StatFinding("benford", "ok",
+                f"leading-digit distribution is consistent with Benford's law (p={p:.2f})",
+                evidence={"n": n}))
 
     # terminal digit: the LAST reported digit of measured values should be roughly uniform
     # over 0-9. A strong departure can signal rounding habits or fabrication. We use only
@@ -263,13 +269,14 @@ def digit_tests(tidy, min_values: int = 30) -> list:
     with_dec = []
     for r in tidy.rows:
         v = r.get("value")
-        if isinstance(v, float) and math.isfinite(v):
-            txt = r.get("_raw") if isinstance(r.get("_raw"), str) else None
-            # derive last digit from the value's shortest decimal form
-            frac = repr(v).split(".")
-            if len(frac) == 2 and frac[1] and frac[1] != "0":
-                with_dec.append(int(frac[1][-1]))
-    if len(with_dec) >= min_values:
+        raw = r.get("_raw")
+        if isinstance(v, (int, float)) and math.isfinite(v) and isinstance(raw, str):
+            # Preserve reported precision, including terminal zero. Never infer
+            # the reported digit from a binary float's repr or exponent.
+            m = re.fullmatch(r"[+-]?\d*\.(\d+)", raw.strip())
+            if m:
+                with_dec.append(int(m.group(1)[-1]))
+    if len(with_dec) >= max(min_values, 50):
         obs2 = Counter(with_dec); n2 = len(with_dec)
         exp2 = n2 / 10.0
         chi2b = sum((obs2.get(d, 0) - exp2) ** 2 / exp2 for d in range(10))
@@ -285,6 +292,6 @@ def digit_tests(tidy, min_values: int = 30) -> list:
                 evidence={"n": n2}))
     else:
         findings.append(StatFinding("terminal_digit", "not_applicable",
-            f"only {len(with_dec)} values carry a measured decimal digit; a terminal-digit "
-            f"test needs at least {min_values} to be meaningful"))
+            f"only {len(with_dec)} values preserve a reported decimal digit; a terminal-digit "
+            f"test needs at least {max(min_values, 50)} to be meaningful"))
     return findings

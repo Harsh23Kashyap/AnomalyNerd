@@ -32,7 +32,7 @@ def _fmt_axislist(axes, metric):
     return f"{metric} across " + ", ".join(inputs[:-1]) + f" and {inputs[-1]}"
 
 
-def _pattern_phrase(f: Flag, t: TidyTable) -> str:
+def _pattern_phrase_unscoped(f: Flag, t: TidyTable) -> str:
     """One grounded clause describing a single detected pattern, from its real detail values."""
     d = f.detail or {}
     m = t.metric_name
@@ -47,7 +47,11 @@ def _pattern_phrase(f: Flag, t: TidyTable) -> str:
         return (f"{m} holds near {bm} over {ax}={span[0]:g}--{span[1]:g} and then shifts to a "
                 f"new level" if (bm is not None and span) else f"{m} shows a level shift along {ax}")
     if f.type == "numeric_jump":
-        at = d.get("at"); return f"{m} jumps sharply near {ax}={at}" if at is not None else f"{m} has a sharp jump along {ax}"
+        start, end = d.get("from"), d.get("to")
+        if start is not None and end is not None:
+            return f"{m} jumps sharply between {ax}={start} and {ax}={end}"
+        at = d.get("at")
+        return f"{m} jumps sharply near {ax}={at}" if at is not None else f"{m} has a sharp jump along {ax}"
     if f.type == "win_reversal":
         winners = d.get("winners") or d.get("sequence")
         return (f"the best {t.entity_axis or 'method'} changes along {ax}"
@@ -64,6 +68,13 @@ def _pattern_phrase(f: Flag, t: TidyTable) -> str:
         return (f"{m} is identical across {ax} (the axis appears to have no effect)"
                 if f.type == "flatness" else f"a repeated {m} value suggests a possible copy")
     return f"a {f.type.replace('_', ' ')} along {ax}"
+
+
+def _pattern_phrase(f: Flag, t: TidyTable) -> str:
+    """Keep the detector's held-fixed coordinates with every caption claim."""
+    phrase = _pattern_phrase_unscoped(f, t)
+    scope = ", ".join(f"{key}={value}" for key, value in (f.coords or {}).items())
+    return f"{phrase} ({scope})" if scope else phrase
 
 
 # ----------------------------------------------------------------- caption assembly
@@ -91,7 +102,7 @@ def generate_caption(t: TidyTable, flags=None, level: str = "medium",
         axpart = (" across " + ", ".join(others)) if others else ""
         base = f"{metric} for each {entity}{axpart}."
     else:
-        base = f"{subject.capitalize()}."
+        base = f"{subject}."
 
     salient = [f for f in flags if f.priority in ("HIGH", "MEDIUM")]
     # A caption should describe the table's PATTERN. Flatness/duplicate flags are
@@ -113,7 +124,7 @@ def generate_caption(t: TidyTable, flags=None, level: str = "medium",
         if not salient:
             return base + " No notable pattern is flagged."
         # medium: the single most salient pattern
-        parts.append(_pattern_phrase(salient[0], t).capitalize() + ".")
+        parts.append(_pattern_phrase(salient[0], t) + ".")
         if lvl == "detailed" and len(salient) > 1:
             extra = "; ".join(_pattern_phrase(f, t) for f in salient[1:4])
             parts.append("Also: " + extra + ".")

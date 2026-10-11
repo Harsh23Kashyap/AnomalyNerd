@@ -40,7 +40,8 @@ def _parse_number(s: str):
     t2 = re.sub(r"[×x]\s*10\^?(-?\d+)", lambda m: f"e{m.group(1)}", t2)  # 8×10^3 -> 8e3
     t2 = t2.replace("−", "-")  # unicode minus
     try:
-        return float(t2)
+        number = float(t2)
+        return number if math.isfinite(number) else MISSING
     except ValueError:
         return MISSING
 
@@ -129,7 +130,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
             for r_i in range(len(data)):
                 base = {c: _coerce(cols[c][r_i]) for c in idx_cols}
                 for ec in entity_cols:
-                    rows.append({**base, "method": ec, "value": _parse_number(cols[ec][r_i])})
+                    rows.append({**base, "method": ec, "value": _parse_number(cols[ec][r_i]), "_raw": cols[ec][r_i]})
             axes = {}
             for c in idx_cols:
                 axes[c] = _make_axis(c, [_coerce(x) for x in cols[c]], orders)
@@ -177,6 +178,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
     for r_i in range(len(data)):
         row = {c: _coerce(cols[c][r_i]) for c in axis_cols}
         row["value"] = _parse_number(cols[mcol][r_i])
+        row["_raw"] = cols[mcol][r_i]
         rows.append(row)
     axes = {}
     for c in axis_cols:
@@ -188,7 +190,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
         axes[c] = ax
     lib = lower_is_better
     if lib is None:
-        lib = any(w in mcol.lower() for w in _LOWER_BETTER) or True
+        lib = not any(w in mcol.lower() for w in ("accuracy", "acc", "auc", "f1", "precision", "recall", "score"))
     return TidyTable(name, axes, entity_axis=ecol, metric_name=mcol,
                      lower_is_better=lib, rows=rows)
 
@@ -247,6 +249,26 @@ def read_tables(path, **kwargs):
         return ints == sorted(ints) and (ints[-1] - ints[0]) <= 2 * len(ints)
 
     metric_numeric = [h for h in numeric_cols if not _idx_like(h)]
+    named_metrics = [h for h in numeric_cols if h in metric_by_name or any(w in h.lower().split("_") for w in ("ratio", "count", "metric"))]
+    # Named metrics are outputs, even when monotonic or similar in scale.
+    # The old sweep heuristic incorrectly removed improving accuracy curves.
+    if kwargs.get("metric_col") is None and len(named_metrics) >= 2:
+        shared = [h for h in header if h not in named_metrics]
+        import tempfile
+        tables = []
+        for mc in named_metrics:
+            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as tmp:
+                writer = csv.writer(tmp)
+                writer.writerow(shared + [mc])
+                writer.writerows([[cols[c][i] for c in shared + [mc]] for i in range(len(data))])
+            try:
+                options = dict(kwargs)
+                options.update(metric_col=mc, name=(kwargs.get("name") or path.split("/")[-1]) + f" [{mc}]")
+                tables.append(read_csv(tmp.name, **options))
+            finally:
+                os.unlink(tmp.name)
+        return tables
+
 
     # Split when there are 2+ metric columns that are heterogeneous (different scales =>
     # different metrics). This holds whether or not the columns are metric-named: a table
