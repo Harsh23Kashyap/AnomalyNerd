@@ -45,3 +45,28 @@ def test_comparison_checkable_only():
     assert "('direction', 'decrease')" in rep["shared"], "should share the downward-trend claim"
     # 'Table 2' and the year 1970 must be filtered out as metadata, not counted as claims
     assert "('value', 1970.0)" not in rep["real_claims"]
+
+
+def test_caption_keeps_case_and_fixed_coordinates():
+    """A slice-specific finding must not become a claim about every method."""
+    from anomalynerd.model import Axis, Flag, TidyTable
+    table = TidyTable("scope", {"method": Axis("method", "unordered_cat"),
+                               "N": Axis("N", "numeric")},
+                      "method", "RMSE", True, [])
+    flag = Flag("trend", "scope", "N", {"method": "CNN"},
+                {"slope": 1, "start_value": 1, "end_value": 5, "r2": 1},
+                1, 1, "HIGH")
+    caption = generate_caption(table, [flag])
+    assert "RMSE increases with N" in caption
+    assert "method=CNN" in caption
+    assert "Rmse" not in caption and "method=cnn" not in caption
+
+
+def test_caption_jump_uses_detector_endpoints():
+    """numeric_jump evidence has from/to, not an at coordinate."""
+    from anomalynerd.model import Axis, Flag, TidyTable
+    table = TidyTable("jump", {"N": Axis("N", "numeric")},
+                      None, "RMSE", True, [])
+    flag = Flag("numeric_jump", "jump", "N", {},
+                {"from": 10, "to": 20, "values": [1, 12]}, 12, 1, "HIGH")
+    assert "between N=10 and N=20" in generate_caption(table, [flag])
