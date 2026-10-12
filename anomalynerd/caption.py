@@ -48,13 +48,16 @@ def _pattern_phrase_unscoped(f: Flag, t: TidyTable) -> str:
         else:
             verb = "increases"
         pear = d.get("pearson"); spear = d.get("spearman")
+        pci = d.get("pearson_ci"); sci = d.get("spearman_ci")
+        def _ci(ci):
+            return f", 95% CI [{ci[0]}, {ci[1]}]" if ci else ""
         start, end = d.get("start_value", "?"), d.get("end_value", "?")
         phrase = (f"{m} {verb} as {ax} increases" if verb in ("increases","decreases") else f"{m} {verb} as {ax} increases (ties present)")
         if d.get("well_fit_by_line") and pear is not None:
-            phrase += f" (roughly linear, Pearson r={pear})"
+            phrase += f" (roughly linear, Pearson r={pear}{_ci(pci)})"
         elif spear is not None:
-            phrase += (f" (monotonic, Spearman rho={spear}; not well described by a "
-                       f"straight line" + (f", Pearson r={pear}" if pear is not None else "") + ")")
+            phrase += (f" (monotonic, Spearman rho={spear}{_ci(sci)}; not well described by a "
+                       f"straight line" + (f", Pearson r={pear}{_ci(pci)}" if pear is not None else "") + ")")
         return phrase + f", from {start} to {end}"
     if f.type == "level_shift":
         bm = d.get("baseline_mean"); span = d.get("baseline_span")

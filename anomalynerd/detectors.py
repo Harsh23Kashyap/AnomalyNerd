@@ -553,6 +553,38 @@ def _spearman(xs, ys):
     return _pearson(_rank(xs), _rank(ys))
 
 
+def _bootstrap_corr_ci(xs, ys, stat, iters=2000, conf=0.95, seed=0):
+    """Non-parametric bootstrap confidence interval for a correlation statistic.
+
+    Resamples the PAIRED (x, y) observations with replacement `iters` times, recomputes
+    `stat` (e.g. _pearson or _spearman) each time, and returns the (lower, upper) percentile
+    interval at the given confidence level. Makes no distributional assumption, which suits
+    the small, non-normal series in results tables. Returns None when there are too few points
+    (<4) or the statistic is undefined on too many resamples (e.g. a near-constant column).
+    """
+    import random as _random
+    n = len(xs)
+    if n < 4 or stat(xs, ys) is None:
+        return None
+    rng = _random.Random(seed)
+    vals = []
+    for _ in range(iters):
+        idx = [rng.randrange(n) for _ in range(n)]
+        bx = [xs[i] for i in idx]
+        by = [ys[i] for i in idx]
+        c = stat(bx, by)
+        if c is not None:                       # skip resamples where a column came out constant
+            vals.append(c)
+    if len(vals) < iters // 2:                  # too unstable to report an honest interval
+        return None
+    vals.sort()
+    lo_q = (1 - conf) / 2
+    hi_q = 1 - lo_q
+    lo = vals[max(0, int(lo_q * len(vals)) - 1)]
+    hi = vals[min(len(vals) - 1, int(hi_q * len(vals)))]
+    return (round(lo, 3), round(hi, 3))
+
+
 def _monotonic_direction(ys):
     """Classify the series as strictly/weakly increasing, decreasing, or neither, from the
     sign of its consecutive differences. 'non_decreasing'/'non_increasing' allow ties."""
@@ -867,6 +899,10 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
             # pattern (ties -> non-decreasing/non-increasing).
             pearson = _pearson(xs, ys)
             spearman = _spearman(xs, ys)
+            # Non-parametric bootstrap confidence intervals for the correlations, so the caption
+            # can report not just the point estimate but how uncertain it is on this many points.
+            pearson_ci = _bootstrap_corr_ci(xs, ys, _pearson)
+            spearman_ci = _bootstrap_corr_ci(xs, ys, _spearman)
             mono = _monotonic_direction(ys)
             is_monotonic = mono in ("increasing", "decreasing", "non_decreasing", "non_increasing")
             strong_linear = r2 >= r2_min and abs(total_change) > 0.5 * rng
@@ -886,6 +922,7 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
                     detail={"slope": round(slope, 3), "r2": round(r2, 3),
                             "pearson": None if pearson is None else round(pearson, 3),
                             "spearman": None if spearman is None else round(spearman, 3),
+                            "pearson_ci": pearson_ci, "spearman_ci": spearman_ci,
                             "monotonic": mono, "well_fit_by_line": bool(well_linear),
                             "from": pts[0][2], "to": pts[-1][2],
                             "start_value": round(ys[0], 2), "end_value": round(ys[-1], 2),
@@ -894,23 +931,27 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
                     support=supp,
                     suggestion=_relationship_suggestion(
                         t.metric_name, ax_name, direction, ys, pearson, spearman,
-                        well_linear, is_expected_flat),
+                        well_linear, is_expected_flat, pearson_ci, spearman_ci),
                 ))
     return flags
 
 
 def _relationship_suggestion(metric, ax_name, direction, ys, pearson, spearman,
-                             well_linear, is_expected_flat):
+                             well_linear, is_expected_flat, pearson_ci=None, spearman_ci=None):
     """Describe the relationship first; only append an investigation prompt (with a reason)
-    when the axis was expected to be flat. Keeps description separate from judgment."""
+    when the axis was expected to be flat. Keeps description separate from judgment. When a
+    bootstrap confidence interval is available for the reported correlation, it is shown so the
+    reader sees how uncertain the estimate is on this many points."""
+    def _ci(ci):
+        return f", 95% CI [{ci[0]:.2f}, {ci[1]:.2f}]" if ci else ""
     verb = "increases" if direction == "rises" else "decreases"
     desc = f"{metric} {verb} as {ax_name} increases"
     if pearson is not None:
         if well_linear:
-            desc += f" (roughly linear, Pearson r={pearson:.2f})"
+            desc += f" (roughly linear, Pearson r={pearson:.2f}{_ci(pearson_ci)})"
         elif spearman is not None:
-            desc += (f" (monotonic, Spearman rho={spearman:.2f}; "
-                     f"not well described by a straight line, Pearson r={pearson:.2f})")
+            desc += (f" (monotonic, Spearman rho={spearman:.2f}{_ci(spearman_ci)}; "
+                     f"not well described by a straight line, Pearson r={pearson:.2f}{_ci(pearson_ci)})")
     desc += f"; {metric} goes from {ys[0]:.0f} to {ys[-1]:.0f}."
     if is_expected_flat:
         desc += f" {ax_name} was expected to be flat or random, so you may want to investigate."

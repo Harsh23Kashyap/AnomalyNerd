@@ -194,3 +194,35 @@ def test_terminal_jump_reversal_stays_high():
     endpoint = jumps([1, 2, 3, 4, 5, 6, 7, 10000])
     assert endpoint and all(f.priority == "LOW" for f in endpoint)
     assert all(f.detail["in_monotonic_relationship"] for f in endpoint)
+
+
+def test_correlation_bootstrap_ci():
+    """A reported correlation carries a non-parametric bootstrap confidence interval: tight for
+    a near-perfect fit, wider when the linear relationship is weak, and absent for too few points."""
+    from anomalynerd.detectors import _bootstrap_corr_ci, _pearson, _spearman
+
+    xs = list(range(12))
+    # perfect linear: CI should be a tight interval at the top of the range
+    ci = _bootstrap_corr_ci(xs, [2 * x for x in xs], _pearson)
+    assert ci is not None and ci[0] >= 0.95 and ci[1] <= 1.0
+
+    # monotonic but poorly linear (one huge endpoint): Spearman CI tight, Pearson CI wide
+    ys = [1, 2, 3, 4, 5, 6, 7, 10000]
+    sx = list(range(len(ys)))
+    sci = _bootstrap_corr_ci(sx, ys, _spearman)
+    pci = _bootstrap_corr_ci(sx, ys, _pearson)
+    assert sci is not None and sci[0] >= 0.95        # Spearman near-certain (monotonic)
+    assert pci is not None and (pci[1] - pci[0]) > (sci[1] - sci[0])  # Pearson interval wider
+
+    # too few points: no CI
+    assert _bootstrap_corr_ci([1, 2, 3], [1, 2, 3], _pearson) is None
+
+
+def test_caption_reports_confidence_interval():
+    """The relationship caption includes the bootstrap CI for the reported correlation."""
+    from anomalynerd.model import Axis, TidyTable
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "rank", False,
+                  [{"X": x, "value": y} for x, y in
+                   zip(range(1, 13), [201, 180, 175, 160, 150, 145, 140, 138, 130, 128, 123, 121])])
+    cap = generate_caption(t, None, "medium")
+    assert "95% CI" in cap
