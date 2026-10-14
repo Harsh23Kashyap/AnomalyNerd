@@ -382,23 +382,36 @@ def _try_docling(path: str):
     """Run Docling (if installed) and convert its tables to ExtractedTables via the same
     _assess_and_tidy path. Returns (list_of_ExtractedTable, note_or_None). Forces CPU because
     Docling's layout model uses float64, which the Mac MPS backend rejects."""
+    # PyTorch reads PYTORCH_ENABLE_MPS_FALLBACK when it registers the MPS dispatch fallback,
+    # normally when torch is first loaded, not at each operation. Set it before importing
+    # Docling so a fresh process can use CPU for unsupported MPS ops. This is process-wide:
+    # restoring os.environ does not unregister a fallback that PyTorch already registered.
+    import os as _os
+    _prev_fallback = _os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK")
+    _os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     try:
-        from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import (
-            PdfPipelineOptions, AcceleratorOptions, AcceleratorDevice)
-    except Exception:
-        return [], ("a layout-model fallback (Docling) is not installed, so borderless tables "
-                    "that the default extractor cannot read were not recovered; "
-                    "`pip install docling` to enable it")
-    try:
-        opts = PdfPipelineOptions()
-        opts.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
-        conv = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
-        doc = conv.convert(path).document
-    except Exception as e:
-        return [], f"the Docling fallback failed to convert this PDF ({type(e).__name__})"
+        try:
+            from docling.document_converter import DocumentConverter, PdfFormatOption
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import (
+                PdfPipelineOptions, AcceleratorOptions, AcceleratorDevice)
+        except Exception:
+            return [], ("a layout-model fallback (Docling) is not installed, so borderless tables "
+                        "that the default extractor cannot read were not recovered; "
+                        "`pip install docling` to enable it")
+        try:
+            opts = PdfPipelineOptions()
+            opts.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
+            conv = DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+            doc = conv.convert(path).document
+        except Exception as e:
+            return [], f"the Docling fallback failed to convert this PDF ({type(e).__name__})"
+    finally:
+        if _prev_fallback is None:
+            _os.environ.pop("PYTORCH_ENABLE_MPS_FALLBACK", None)
+        else:
+            _os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = _prev_fallback
     out = []
     skipped_tables = 0
     for tb in getattr(doc, "tables", []):
