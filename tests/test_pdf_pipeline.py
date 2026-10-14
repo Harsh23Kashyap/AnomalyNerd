@@ -218,3 +218,68 @@ def test_latex_mean_std_cells_keep_central_value():
         assert _clean_cell(cell) == "0.689", cell
     # A longer LaTeX control word beginning with pm is not the plus/minus command.
     assert _clean_cell(r"0.689\pmod{2}") == "0.6892"
+
+
+def test_non_table_filter_drops_prose_keeps_data():
+    """The non-table filter drops clear metadata/prose blocks, never plausible data tables."""
+    from anomalynerd.pdf_ingest import _looks_like_non_table
+    # a submission cover-sheet block
+    meta = [["Manuscript Number:", "X-123"], ["Article Type:", "Research paper"],
+            ["Keywords:", "clustering; graphs"], ["Corresponding Author:", "A. Author"]]
+    assert _looks_like_non_table(meta) is True
+    # a prose block split into one-cell lines: sentence shape, not merely "no numbers"
+    prose = [["The method first represents spatial data as a graph and then compares local neighborhoods."],
+             ["We evaluate the approach against published baselines using several public datasets."],
+             ["The discussion explains limitations, threats to validity, and directions for future work."]]
+    assert _looks_like_non_table(prose) is True
+    # a genuine small numeric results table must NOT be dropped
+    data = [["Algorithm", "ARI", "NMI"], ["kmeans", "0.81", "0.74"],
+            ["dbscan", "0.63", "0.59"], ["optics", "0.70", "0.66"]]
+    assert _looks_like_non_table(data) is False
+    # a genuine all-text qualitative table must NOT be dropped just because it has no numbers
+    qualitative = [["Method", "Assumption", "Strength", "Failure mode"],
+                   ["Interview coding", "Participants describe stable themes", "Rich explanation", "Researcher interpretation"],
+                   ["Content analysis", "Categories are defined consistently", "Transparent classification", "Ambiguous source wording"],
+                   ["Narrative review", "Studies are comparable qualitatively", "Broad synthesis", "Selection emphasis"]]
+    assert _looks_like_non_table(qualitative) is False
+
+
+def test_non_table_blocks_are_not_listed_as_could_not_check():
+    """Clear metadata/prose mis-detections are counted but do not clutter honesty coverage."""
+    from anomalynerd.analyze_pdf import _analyze_parse
+    from anomalynerd.pdf_ingest import ExtractedTable, PdfParse
+    et = ExtractedTable(page=1, index_on_page=0, n_rows=4, n_cols=2,
+                        status="non_table", reason="not a results table (metadata form); skipped")
+    parse = PdfParse(path="x.pdf", n_pages=1, tables=[et], stat_strings=[])
+    res = _analyze_parse("x.pdf", parse, None)
+    assert res.non_table_count == 1
+    assert not any("not a results table" in item for item in res.could_not_check)
+
+
+def test_short_code_headers_are_not_shredded_captions():
+    """Compact real headers such as A/B/C/D stay headers; only caption-marked shrapnel is cleaned."""
+    from anomalynerd.pdf_ingest import _assess_and_tidy, _looks_like_shredded_caption
+    header = ["A", "B", "C", "D"]
+    assert _looks_like_shredded_caption(header) is False
+    rows = [header,
+            ["0.81", "0.74", "0.63", "0.59"],
+            ["0.70", "0.66", "0.72", "0.68"],
+            ["0.69", "0.71", "0.64", "0.62"]]
+    et = _assess_and_tidy(rows, page=1, idx=1)
+    assert et.status == "ok", et.reason
+    assert et.tidy is not None
+
+
+def test_caption_marked_shrapnel_is_not_used_as_headers():
+    """A shredded Table caption gets synthetic column names instead of junk metric names."""
+    from anomalynerd.pdf_ingest import _assess_and_tidy, _looks_like_shredded_caption
+    caption = ["able 6 Co", "mp", "a", "rison results for", "methods"]
+    assert _looks_like_shredded_caption(caption) is True
+    rows = [caption,
+            ["0.81", "0.74", "0.63", "0.59", "0.70"],
+            ["0.70", "0.66", "0.72", "0.68", "0.69"],
+            ["0.69", "0.71", "0.64", "0.62", "0.65"]]
+    et = _assess_and_tidy(rows, page=1, idx=1)
+    assert et.header == [f"col{i}" for i in range(5)]
+    assert et.status == "ok", et.reason
+    assert et.tidy is not None

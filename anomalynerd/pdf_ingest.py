@@ -9,7 +9,9 @@ the PDF contains is reported with an extraction STATUS:
     - "ok"       : parsed into a numeric results table the detectors can run on
     - "partial"  : parsed but with caveats (few numeric columns, ragged rows, ...)
     - "skipped"  : detected but not analyzable (too small, no numeric content, ...)
-We never silently drop a table; a skipped table is reported with the reason.
+    - "non_table": clear metadata/prose mis-detection, omitted from the uncheckable-table list
+We never silently drop a plausible table; a skipped table is reported with the reason.
+Only blocks with strong non-table evidence are omitted from that honesty section.
 
 PDF table extraction is inherently unreliable (multi-column layouts, merged cells,
 image-based tables). This module reports its own uncertainty rather than hiding it.
@@ -33,7 +35,7 @@ class ExtractedTable:
     index_on_page: int
     n_rows: int
     n_cols: int
-    status: str                      # "ok" | "partial" | "skipped"
+    status: str                      # "ok" | "partial" | "skipped" | "non_table"
     reason: str = ""                 # why partial/skipped (human readable)
     header: list = field(default_factory=list)
     rows: list = field(default_factory=list)   # raw cell rows (list[list[str]])
@@ -78,6 +80,75 @@ def _looks_like_header(row) -> bool:
     return numeric <= len(cells) * 0.4
 
 
+# metadata labels found on journal submission cover sheets / front matter -- a strong signal
+# that a detected "table" is really a form or prose block, not a results table.
+_METADATA_LABELS = (
+    "manuscript number", "article type", "keywords", "corresponding author",
+    "order of authors", "abstract", "--manuscript draft--", "submission", "cover letter",
+    "funding information", "classifications", "suggested reviewers", "opposed reviewers",
+)
+
+
+def _looks_like_non_table(rows) -> bool:
+    """True only when a detected block is clearly NOT a results table.
+
+    Silent dropping needs stronger evidence than "mostly words": qualitative results tables
+    can legitimately contain no numbers. The safe cases are (1) front-matter metadata forms
+    and (2) prose-shaped blocks: rows with one or two long sentence-like cells, such as an
+    abstract or body paragraph split into lines. Ambiguous wordy blocks remain ordinary
+    skipped tables so the report still says they could not be checked.
+    """
+    cells = [_clean(c) for r in rows for c in r if _clean(c) != ""]
+    if not cells:
+        return True
+    joined = " ".join(cells).lower()
+    # metadata/cover-sheet labels
+    if sum(1 for lab in _METADATA_LABELS if lab in joined) >= 2:
+        return True
+
+    numeric = sum(1 for c in cells if _parse_number(c) is not MISSING)
+    if numeric > 0.05 * len(cells):
+        return False
+
+    nonempty_rows = [[_clean(c) for c in r if _clean(c) != ""] for r in rows]
+    nonempty_rows = [r for r in nonempty_rows if r]
+    if len(nonempty_rows) < 3:
+        return False
+    prose_rows = sum(1 for r in nonempty_rows if len(r) <= 2)
+    sentence_like = sum(1 for c in cells if _looks_sentence_like(c))
+    return prose_rows >= 0.8 * len(nonempty_rows) and sentence_like >= max(2, 0.6 * len(cells))
+
+
+def _looks_sentence_like(c: str) -> bool:
+    """A long natural-language cell, usually ending like a sentence."""
+    words = c.split()
+    if len(c) < 50 or len(words) < 7:
+        return False
+    letters = sum(ch.isalpha() for ch in c)
+    if letters < 0.6 * len(c):
+        return False
+    return bool(re.search(r"[.!?](?:\s|$)", c)) or len(words) >= 10
+
+
+def _looks_like_shredded_caption(row) -> bool:
+    """True when a header row is explicitly caption-like AND shredded into fragments.
+
+    Short cells alone are not enough: legitimate results tables often use A/B/C/D or other
+    compact column codes. Require a caption marker such as 'Table 6' (or the common
+    extraction-truncated 'able 6 ...') before replacing the row's names.
+    """
+    cells = [_clean(c) for c in row]
+    nonempty = [c for c in cells if c != ""]
+    if len(nonempty) < 3:
+        return False
+    first = (nonempty[0] or "").strip()
+    caption_marker = bool(re.match(r"(?i)^(table|fig(ure)?|able|ig(ure)?)\b.*\d", first)) \
+        or bool(re.match(r"(?i)^(table|figure)\s*\d", first))
+    if not caption_marker:
+        return False
+    tiny = sum(1 for c in nonempty if len(c) <= 3)
+    return tiny / len(nonempty) >= 0.25
+
 def _assess_and_tidy(tbl, page, idx) -> ExtractedTable:
     """Turn a raw pdfplumber table into an ExtractedTable with an honest status."""
     rows = [[_clean(c) for c in r] for r in (tbl or [])]
@@ -89,6 +160,14 @@ def _assess_and_tidy(tbl, page, idx) -> ExtractedTable:
                         status="skipped")
     if n_rows < 3 or n_cols < 2:
         et.reason = f"too small to analyze ({n_rows}x{n_cols}); need >=3 rows and >=2 columns"
+        return et
+
+    # Drop obvious non-tables (submission cover sheets, metadata forms, prose split into fake
+    # columns) silently: they are not results tables, so reporting them as "could not check"
+    # is just noise that hides the true coverage.
+    if _looks_like_non_table(rows):
+        et.status = "non_table"
+        et.reason = "not a results table (metadata/cover sheet or prose); skipped"
         return et
 
     # normalize ragged rows to the modal width
@@ -110,6 +189,12 @@ def _assess_and_tidy(tbl, page, idx) -> ExtractedTable:
     if not _looks_like_header(header):
         header = [f"col{i}" for i in range(width)]
         body = norm
+    # A caption that got pulled into the grid shreds into fragments (e.g.
+    # "able 6 Co" | "mp" | "a" | "rison results for" ...). Such a row is neither a real
+    # header nor data: synthesize column names and leave it out of schema inference.
+    elif _looks_like_shredded_caption(header):
+        header = [f"col{i}" for i in range(width)]
+        body = norm[1:]
     # de-duplicate / fill blank header names
     seen = {}
     clean_header = []

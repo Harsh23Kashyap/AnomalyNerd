@@ -26,6 +26,7 @@ class PdfAnalysis:
     table_flags: dict = field(default_factory=dict)   # (page,idx) -> list[Flag]
     stat_findings: list = field(default_factory=list) # list[StatFinding]
     could_not_check: list = field(default_factory=list)
+    non_table_count: int = 0           # clear metadata/prose blocks omitted from that list
     source_kind: str = "pdf"           # "pdf" | "latex"
 
 
@@ -78,6 +79,10 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf") -> PdfAnalysis:
                         f"({type(e).__name__}); not analyzed")
                 res.table_flags[key] = flags
                 res.stat_findings += digit_tests(tidy)
+        elif t.status == "non_table":
+            # metadata/cover-sheet/prose block mis-detected as a table: not a results table,
+            # so drop it silently (counted below) rather than cluttering "could not check".
+            res.non_table_count += 1
         else:
             res.could_not_check.append(f"{where} ({t.n_rows}x{t.n_cols}): {t.reason}")
 
