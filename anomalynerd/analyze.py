@@ -78,7 +78,33 @@ def _suppress_jumps_adjacent_to_outliers(flags):
     return kept
 
 
+MAX_AXES = 6
+MAX_COMBINATIONS = 50000
+
+
+def is_pathological(t: TidyTable) -> bool:
+    """True for a table with too many axes or level-combinations (a garbled parse)."""
+    non_value_axes = [a for a in t.axes if a != "value"]
+    if len(non_value_axes) > MAX_AXES:
+        return True
+    combo = 1
+    for a in non_value_axes:
+        combo *= max(1, len(t.levels(a)))
+        if combo > MAX_COMBINATIONS:
+            return True
+    return False
+
+
 def analyze(t: TidyTable, expected_monotonic: dict | None = None, expect_flat: list | None = None) -> list[Flag]:
+    # Sanity gate against pathological tables from a garbled parse. The detectors iterate over
+    # the Cartesian product of the non-target axes' levels; a table with many axes (a signature
+    # of a shredded caption/header, e.g. a one-line caption split into a dozen "columns") makes
+    # that product explode and the analysis hang. A genuine results table has only a few axes.
+    # When a table is clearly mis-parsed this way, skip detector analysis rather than hang; the
+    # PDF/LaTeX report already lists such tables under "what could not be checked".
+    if is_pathological(t):
+        return []
+
     idx = detectors.index_like_axes(t)
     flags = []
     flags += detectors.detect_numeric_jumps(t)

@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .pdf_ingest import parse_pdf
-from .analyze import analyze
+from .analyze import analyze, is_pathological
 from .stat_tests import statcheck, grim, grimmer, digit_tests
 
 
@@ -63,6 +63,12 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf") -> PdfAnalysis:
         if t.status in ("ok", "partial") and tidies:
             for mi, tidy in enumerate(tidies):
                 key = (page, t.index_on_page, mi)
+                if is_pathological(tidy):
+                    res.table_flags[key] = []
+                    res.could_not_check.append(
+                        f"{where} metric '{tidy.metric_name}': too many axes or level "
+                        f"combinations (likely a mis-parsed table); not analyzed")
+                    continue
                 try:
                     flags = analyze(tidy, expect_flat=expect_flat)
                 except Exception as e:

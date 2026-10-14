@@ -226,3 +226,43 @@ def test_caption_reports_confidence_interval():
                    zip(range(1, 13), [201, 180, 175, 160, 150, 145, 140, 138, 130, 128, 123, 121])])
     cap = generate_caption(t, None, "medium")
     assert "95% CI" in cap
+
+
+def test_pathological_many_axis_table_does_not_hang():
+    """A garbled parse can yield a table with many axes; analyze() must skip it (returning no
+    flags) instead of iterating an explosive Cartesian product of axis levels and hanging."""
+    import time
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+    # 10 axes, each with several levels -> millions of combinations if not guarded
+    axes = {f"a{i}": Axis(f"a{i}", "unordered_cat") for i in range(10)}
+    rows = []
+    for r in range(12):
+        row = {f"a{i}": f"v{r % 4}" for i in range(10)}
+        row["value"] = float(r)
+        rows.append(row)
+    t = TidyTable("bad", axes, None, "value", False, rows)
+    start = time.time()
+    flags = analyze(t)
+    assert time.time() - start < 5, "analyze() must not hang on a many-axis (mis-parsed) table"
+    assert flags == [], "a pathological many-axis table should yield no flags"
+
+
+def test_gated_table_is_listed_as_could_not_check():
+    """A table skipped by the many-axes gate must appear under could_not_check in the PDF
+    report, not look like an analyzed table with no flags."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.pdf_ingest import ExtractedTable, PdfParse
+    from anomalynerd.analyze_pdf import _analyze_parse
+    axes = {f"a{i}": Axis(f"a{i}", "unordered_cat") for i in range(10)}
+    rows = []
+    for r in range(12):
+        row = {f"a{i}": f"v{r % 4}" for i in range(10)}
+        row["value"] = float(r)
+        rows.append(row)
+    t = TidyTable("bad", axes, None, "value", False, rows)
+    et = ExtractedTable(page=1, index_on_page=1, n_rows=12, n_cols=11, status="ok",
+                        tidy=t, tidies=[t])
+    res = _analyze_parse("x.pdf", PdfParse("x.pdf", 1, [et], []), None)
+    assert any("not analyzed" in m and "too many axes" in m for m in res.could_not_check)
+    assert list(res.table_flags.values()) == [[]]
