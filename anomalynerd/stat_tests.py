@@ -3,8 +3,8 @@
 Three checks that complement the scientific-pattern detectors, each borrowed from the
 research-integrity literature:
 
-    statcheck  - recompute a reported p-value from its test statistic + df and flag
-                 inconsistencies (Nuijten & Epskamp 2016).
+    statcheck  - recompute a reported p-value from its t, F, r, chi-square, or z
+                 statistic and flag inconsistencies (Nuijten & Epskamp 2016).
     GRIM       - check whether a reported mean is arithmetically achievable for an
                  integer-item measure and the stated sample size (Brown & Heathers 2017).
     Benford /  - check the leading / terminal digit distribution of a numeric column
@@ -38,6 +38,11 @@ class StatFinding:
 _T  = re.compile(r"\bt\s*\(\s*(\d+(?:\.\d+)?)\s*\)\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
 _F  = re.compile(r"\bF\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
 _R  = re.compile(r"\br\s*\(\s*(\d+)\s*\)\s*=\s*(-?\d*\.?\d+)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
+_CHI2 = re.compile(
+    r"(?:\u03c7\u00b2|\u03c72|chi\s*-?\s*square|chi2)\s*\("
+    r"\s*(\d+(?:\.\d+)?)\s*(?:,\s*N\s*=\s*\d+)?\s*\)"
+    r"\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
+_Z = re.compile(r"\bz\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
 
 
 def _reported_p(num_str: str) -> float:
@@ -79,11 +84,29 @@ def statcheck(stat_strings: list) -> list:
                 p_calc = 2 * _st.t.sf(abs(tval), dfr)
                 checked += 1
                 findings.append(_compare_p("r", s, p_rep, op, p_calc))
+            continue
+        m = _CHI2.search(s)
+        if m:
+            df = float(m.group(1)); chi2_value = float(m.group(2))
+            op = m.group(3); p_rep = _reported_p(m.group(4))
+            if chi2_value >= 0:
+                p_calc = _st.chi2.sf(chi2_value, df)
+                checked += 1
+                findings.append(_compare_p("chi-square", s, p_rep, op, p_calc))
+            continue
+        m = _Z.search(s)
+        if m:
+            z_value = float(m.group(1))
+            op = m.group(2); p_rep = _reported_p(m.group(3))
+            p_calc = 2 * _st.norm.sf(abs(z_value))
+            checked += 1
+            findings.append(_compare_p("z", s, p_rep, op, p_calc))
     if checked == 0:
         findings.append(StatFinding(
             "statcheck", "not_applicable",
-            "no reported test statistics with p-values (t(df)=.., F(df,df)=.., r(df)=..) "
-            "were found in the body text, so no p-value could be rechecked"))
+            "no reported test statistics with p-values (t(df)=.., F(df,df)=.., r(df)=.., "
+            "chi-square(df)=.., z=..) were found in the body text, so no p-value could be "
+            "rechecked"))
     return findings
 
 

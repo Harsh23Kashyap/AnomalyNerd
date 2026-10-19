@@ -91,6 +91,20 @@ def test_statcheck_consistent_and_inconsistent():
         "a tiny t with p<.001 must be flagged"
 
 
+def test_statcheck_chi_square_and_z():
+    ok_chi = statcheck(["χ²(2, N = 120) = 5.99, p = .05"])
+    assert ok_chi[0].status == "ok"
+
+    bad_chi = statcheck(["chi-square(2) = 0.10, p < .001"])
+    assert any(f.status == "finding" for f in bad_chi)
+
+    ok_z = statcheck(["z = 1.96, p = .05"])
+    assert ok_z[0].status == "ok"
+
+    bad_z = statcheck(["z = 0.50, p < .001"])
+    assert any(f.status == "finding" for f in bad_z)
+
+
 def test_grim_flags_impossible_mean():
     bad = grim(["M = 3.45, SD = 1.0, N = 7"])
     assert any(f.status == "finding" for f in bad), "3.45 is not achievable for N=7"
