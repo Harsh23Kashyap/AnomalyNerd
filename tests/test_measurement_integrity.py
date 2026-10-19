@@ -41,3 +41,24 @@ def test_bounded_values_not_benford_accusation(tmp_path):
     p=write(tmp_path,['idx','accuracy'],[[i,f'{.8+(i%10)/100:.2f}'] for i in range(100)])
     result=next(x for x in digit_tests(read_csv(p)) if x.kind=='benford')
     assert result.status=='not_applicable'
+
+@pytest.mark.parametrize('token,expected', [
+    ('0.91 [0.88, 0.94]', 0.91),
+    ('0.91 (0.03)', 0.91),
+    ('8×10^{-3}', 0.008),
+    ('8 \\times 10^3', 8000.0),
+    ('8 10^-3', 0.008),
+])
+def test_numeric_cells_keep_central_value(token, expected):
+    assert _parse_number(token) == expected
+
+
+def test_bracketed_interval_column_is_numeric(tmp_path):
+    p = write(tmp_path, ['method', 'accuracy'], [
+        ['A', '0.91 [0.88, 0.94]'],
+        ['B', '0.87 [0.84, 0.90]'],
+        ['C', '0.84 [0.81, 0.87]'],
+    ])
+    t = read_csv(p, metric_col='accuracy')
+    assert [r['value'] for r in t.rows] == [0.91, 0.87, 0.84]
+    assert [r['_raw'] for r in t.rows][0] == '0.91 [0.88, 0.94]'
