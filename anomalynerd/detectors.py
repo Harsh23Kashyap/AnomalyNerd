@@ -117,7 +117,8 @@ def detect_numeric_jumps(t: TidyTable, k_mad=4.0, ratio=3.0, min_points=3):
                         strength=r if r != float("inf") else 999.0,
                         support=1.0,
                         suggestion=(
-                            f"{t.metric_name} rises steeply at the end of a steady climb between "
+                            f"{t.metric_name} {'rises' if vb >= va else 'falls'} steeply at the "
+                            f"end of a steady {'climb' if vb >= va else 'decline'} between "
                             f"{ax_name}={a} and {ax_name}={b} (the endpoint of the relationship, "
                             f"not a separate anomaly)."
                             if endpoint_climb else

@@ -266,3 +266,34 @@ def test_gated_table_is_listed_as_could_not_check():
     res = _analyze_parse("x.pdf", PdfParse("x.pdf", 1, [et], []), None)
     assert any("not analyzed" in m and "too many axes" in m for m in res.could_not_check)
     assert list(res.table_flags.values()) == [[]]
+
+
+def test_declining_endpoint_says_falls_not_rises():
+    """The endpoint-of-climb jump suggestion must respect direction: a declining series
+    says 'falls'/'decline', not 'rises'/'climb'."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.detectors import detect_numeric_jumps
+    t = TidyTable("t", {"X": Axis("X", "numeric")}, None, "Y", False,
+                  [{"X": x, "value": y} for x, y in
+                   zip(range(8), [-1, -2, -3, -4, -5, -6, -7, -10000])])
+    sug = " ".join(f.suggestion for f in detect_numeric_jumps(t))
+    assert "falls" in sug and "decline" in sug
+    assert "rises" not in sug and "climb" not in sug
+
+
+def test_monotonic_trend_is_high_on_expect_flat_axis():
+    """A monotonic-but-nonlinear trend (low r2, high Spearman) on an axis declared flat is a
+    real anomaly and must be HIGH, consistent with a clean linear trend on a flat axis."""
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.analyze import analyze
+
+    def mk(ys):
+        return TidyTable("t", {"X": Axis("X", "numeric")}, None, "Y", False,
+                         [{"X": x, "value": y} for x, y in zip(range(len(ys)), ys)])
+
+    endpoint = [1, 2, 3, 4, 5, 6, 7, 10000]
+    # description-only without expect_flat
+    assert all(f.priority != "HIGH" for f in analyze(mk(endpoint)))
+    # HIGH when the axis is expected flat (same as a clean linear trend)
+    flat = [f for f in analyze(mk(endpoint), expect_flat=["X"]) if f.type == "trend"]
+    assert flat and any(f.priority == "HIGH" for f in flat)

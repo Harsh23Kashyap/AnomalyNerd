@@ -34,9 +34,15 @@ def score(flags: list[Flag]) -> list[Flag]:
             else:
                 hi = False; med = False
         elif f.type == "trend":
-            # only a real finding when the axis is expected flat (support~1); otherwise LOW
+            # only a real finding when the axis is expected flat (support~1); otherwise LOW.
+            # Strength must reflect BOTH linear fit (r2 = f.strength) and monotonic association
+            # (|Spearman|): a monotonic-but-nonlinear trend (e.g. 1..7,10000) has low r2 but is a
+            # strong, real trend, and on an expect_flat axis it is just as much an anomaly as a
+            # linear one. Use the stronger of the two so it is not under-scored.
+            spear = f.detail.get("spearman")
+            eff = max(s, abs(spear) if spear is not None else 0.0)
             if sup >= 0.9:
-                hi = s >= 0.8; med = s >= 0.5
+                hi = eff >= 0.8; med = eff >= 0.5
             else:
                 hi = False; med = False
         else:
