@@ -37,8 +37,29 @@ def _parse_number(s: str):
     if t in _MISSING_TOKENS:
         return MISSING
     t2 = s.strip().replace(",", "").replace("%", "")
-    t2 = re.sub(r"[×x]\s*10\^?(-?\d+)", lambda m: f"e{m.group(1)}", t2)  # 8×10^3 -> 8e3
     t2 = t2.replace("−", "-")  # unicode minus
+
+    # Scientific notation appears in papers as 8x10^3, 8×10^{-3}, or
+    # 8 \times 10^{-3}. Normalize those forms before the float parse. LaTeX cleaning can
+    # leave the multiplication command as whitespace ("8 10^-3"), so accept that shape too.
+    sci = re.match(
+        r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(?:[×x]|\\times)?\s*10\^\{?(-?\d+)\}?$",
+        t2,
+        flags=re.I,
+    )
+    if sci:
+        t2 = f"{sci.group(1)}e{sci.group(2)}"
+
+    # Mean-plus-uncertainty cells often carry a bracketed interval or parenthesized SD:
+    # "0.91 [0.88, 0.94]" or "0.91 (0.03)". Keep the central estimate as the value; the
+    # original string remains available in each row's _raw field.
+    central = re.match(
+        r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s*(?:\[[^\]]+\]|\([^)]*\))\s*$",
+        t2,
+        flags=re.I,
+    )
+    if central:
+        t2 = central.group(1)
     try:
         number = float(t2)
         return number if math.isfinite(number) else MISSING
