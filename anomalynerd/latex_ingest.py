@@ -55,10 +55,12 @@ def expand_project(path: str, max_depth=20, max_bytes=5_000_000):
 
 def _strip_rules(text):
     # cmidrule's optional trim (lr) must be removed together with its range.
+    """Remove LaTeX table rules such as \hline, \toprule and \cmidrule from the text."""
     return re.sub(r"\\(?:cmidrule|cline)\s*(?:\[[^\]]*\])?\s*(?:\([^)]*\))?\s*\{[^}]*\}|\\(?:toprule|midrule|bottomrule)\s*(?:\[[^\]]*\])?|\\hline", "", text)
 
 
 def _split_cells(row):
+    """Split a table row on "&", ignoring escaped ampersands and those inside braces."""
     cells, current, depth = [], [], 0
     for i, char in enumerate(row):
         escaped = i > 0 and row[i-1] == "\\"
@@ -77,6 +79,7 @@ _CAPTION = re.compile(r"\\caption\*?\{", re.S)
 
 
 def _strip_comments(tex: str) -> str:
+    """Remove LaTeX comments from the text."""
     return "\n".join(_COMMENT.sub("", ln) for ln in tex.split("\n"))
 
 
@@ -95,6 +98,7 @@ def _balanced_braces(s: str, start: int) -> tuple:
 
 
 def _clean_cell(c: str) -> str:
+    """Reduce a LaTeX table cell to plain text (rules, \multicolumn and formatting commands removed)."""
     s = _strip_rules(c)
     # \multicolumn{n}{align}{content} -> content
     while "\\multicolumn" in s:
@@ -199,6 +203,7 @@ def _parse_tabular(body: str):
 
 
 def _numeric_fraction(values) -> float:
+    """Share of the non-empty values that parse as numbers."""
     vals = [v for v in values if v.strip() != ""]
     if not vals:
         return 0.0
@@ -224,6 +229,7 @@ from .pdf_ingest import _extract_stat_strings
 
 @dataclass
 class LatexParse:
+    """Result of parsing a LaTeX article: tables, reported statistic strings, notes, and the files pulled in by \input or \include."""
     path: str
     tables: list                 # list[ExtractedTable]
     stat_strings: list
@@ -234,6 +240,7 @@ class LatexParse:
 
 def parse_latex(path_or_text: str) -> LatexParse:
     # accept a path to a .tex file, or raw tex text
+    """Parse a .tex file path or raw LaTeX text and extract its tables and reported statistics."""
     if os.path.exists(path_or_text) and path_or_text.endswith((".tex", ".txt")):
         tex, included, include_issues = expand_project(path_or_text)
         name = os.path.basename(path_or_text)
