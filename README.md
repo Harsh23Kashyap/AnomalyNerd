@@ -77,7 +77,9 @@ the pipeline still runs and says so. On a paired sample, PDF table coverage rose
 
 Run the tests:
 ```bash
-pytest -q          # 28 checks: CSV detectors + PDF/LaTeX pipeline + stat tests
+pytest -q tests/test_pdf_pipeline.py tests/test_caption.py tests/test_datasets.py \
+  tests/test_measurement_integrity.py tests/test_synthetic.py \
+  tests/test_html_report.py tests/test_integrity_gate.py     # 85 tests, a few seconds
 ```
 
 ---
@@ -127,11 +129,21 @@ bin or group) — AnomalyNerd is a results-table scanner, not a raw big-data ML 
 ## Layout
 
 ```
-anomalynerd/        the library (model, ingest, detectors T1–T8, analyze, cli)
-tests/              pytest regression suite (synthetic + 6 real datasets)
-examples/           ready-to-run CSVs + DATA_SOURCES.md (provenance)
-FINDINGS.md         what it found on each dataset
-DESIGN.md           full design doc (detectors, edge cases, validation, roadmap)
+anomalynerd/            the library
+  ingest.py             reads CSV tables into one tidy shape
+  detectors.py          the eight pattern detectors (T1 to T8)
+  analyze.py, cli.py    run the detectors on a CSV and print the report
+  caption.py            writes a short caption from what was computed
+  caption_compare.py    compares it with a paper's own caption
+  pdf_ingest.py         finds results tables in a PDF
+  latex_ingest.py       finds results tables in LaTeX source
+  stat_tests.py         statcheck, GRIM and Benford checks
+  bounded.py            runs each detector with a time limit
+  html_report.py        writes the local review page
+tests/                  regression tests (synthetic data and six real datasets)
+examples/               ready-to-run CSVs, with sources in DATA_SOURCES.md
+FINDINGS.md             what it found on each dataset
+DESIGN.md               the full design notes (detectors, edge cases, validation, roadmap)
 ```
 
 ---
@@ -144,26 +156,34 @@ DESIGN.md           full design doc (detectors, edge cases, validation, roadmap)
 
 ### Bounded article review (local)
 
-`python -m anomalynerd.pdf_cli article.pdf --detector-seconds 4 --checkpoint-dir .anomaly-checkpoints --json`
+```bash
+python -m anomalynerd.pdf_cli article.pdf --detector-seconds 4 --checkpoint-dir .anomaly-checkpoints --json
+```
 
-Each of the eight pattern detectors runs in a separate process with a hard time limit.
-Completed detector results are resumed by table content, detector source, configuration and
-limit. Failed and timed-out checks remain incomplete and are retried, never reported as passes.
-PDF extraction and statistical/digit checks are not governed by this detector limit; use an
-outer process limit when necessary. The JSON records raw headers/cells and source page/path.
-LaTeX includes are expanded only inside the main file's directory, with cycle, depth and byte
-limits. Expanded source-line numbers are not original per-file line numbers. Missing includes
-remain coverage gaps. Complex macros and unsupported structural grids can still be skipped.
+What this does, in plain steps:
 
-Coverage describes detected extraction regions, not the number of true tables in a manuscript.
-Text-alignment extraction can return prose regions or alternative views of the same table.
-Skipped regions remain visible even when another region on that page is usable. Original
-headers are preserved; unidentified, caption-like and split-metric headers are extraction
-failures rather than invented coordinates. An optional layout fallback is not silently installed.
+1. Each of the eight detectors runs in its own process and has a hard time limit.
+2. Finished results are saved in the checkpoint folder. If you run the same table again with the same settings, they are reused.
+3. A detector that fails or runs out of time counts as not finished. It is tried again next time. It is never shown as a pass.
+4. The time limit covers the detectors only. PDF reading and the statistical checks are not limited, so use your own process time limit if you need one.
+5. The JSON output keeps the raw headers and cells, and the page or file where each table was found.
 
-Raw flags are review suggestions. Repeated baselines and runtime variation across different
-datasets may be intentional. Transcribing a printed value correctly does not establish a
-research error. `not_applicable` for statcheck, GRIM or GRIMMER means supported inputs were not
-extracted, not that all manuscript statistics were validated. No clean-pass claim is supported.
+LaTeX files: `\input` and `\include` are followed only inside the folder of the main file, with limits on depth, loops and size. Line numbers in the expanded text are not the original line numbers of each file. A missing include is listed as something that could not be checked. Complex macros and unusual table layouts can still be skipped.
+
+How to read the results:
+
+- "Coverage" counts the table regions found, not the true number of tables in the paper. Some regions can be plain text, or a second view of the same table. Skipped regions stay visible even when another region on the same page worked.
+- Original headers are kept. If a header cannot be identified, that table is marked as an extraction failure. No names are invented.
+- The layout fallback (Docling) is optional and is never installed for you.
+- Every flag is a suggestion to look closer. The same baseline or run time appearing in several datasets can be intentional. Copying a printed number correctly does not prove a research mistake.
+- `not_applicable` for statcheck, GRIM or GRIMMER means the supported inputs were not found. It does not mean the paper's statistics were checked and are fine. A clean pass is never claimed.
 
 The HTML report stays on your machine. Editing changes the displayed copy, not the CSV or detector output. Saved edits show an edited-report notice; downloaded edited copies carry the same warning. Re-run the CSV to restore the computed report.
+
+---
+
+## Contributing
+
+1. Install the requirements and run the tests above. All should pass before you open a pull request.
+2. Keep each pull request to one change, and add a test for it.
+3. Do not commit generated reports or checkpoint folders.
