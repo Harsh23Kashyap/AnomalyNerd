@@ -31,6 +31,7 @@ _ORDER_LEXICON = [
 
 
 def _parse_number(s: str):
+    """Turn a table cell into a number. Returns MISSING for blanks and missing-value tokens. Handles commas, percent signs, unicode minus and scientific notation written as in papers."""
     if s is None:
         return MISSING
     t = s.strip().lower()
@@ -68,6 +69,7 @@ def _parse_number(s: str):
 
 
 def _looks_numeric(values):
+    """True when at least 80% of the non-missing values parse as numbers."""
     got = 0; total = 0
     for v in values:
         if v is None or str(v).strip().lower() in _MISSING_TOKENS:
@@ -79,6 +81,7 @@ def _looks_numeric(values):
 
 
 def _infer_order(levels):
+    """Return the levels in their natural order (for example low, medium, high) when they fit a known word list, otherwise None."""
     lows = [str(l).strip().lower() for l in levels]
     for lex in _ORDER_LEXICON:
         if set(lows) <= set(lex):
@@ -89,6 +92,7 @@ def _infer_order(levels):
 
 def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
              name=None, orders=None, index_cols=None, ignore_cols=None):
+    """Read a CSV results table into a TidyTable. Column roles (metric, entity, axes) are detected unless given."""
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         header = next(reader)
@@ -223,6 +227,7 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
 
 
 def _median_scale(values):
+    """Median of the absolute non-zero values, used as a typical size for the column. Returns None if there are none."""
     parsed = [_parse_number(v) for v in values]
     nums = [abs(x) for x in parsed if x is not MISSING and x != 0]
     if not nums:
@@ -349,11 +354,13 @@ def read_tables(path, **kwargs):
 
 
 def _coerce(x):
+    """Convert a cell to a number when it parses as one, otherwise return the stripped text."""
     n = _parse_number(x)
     return n if n is not MISSING else (x.strip() if isinstance(x, str) else x)
 
 
 def _make_axis(name, values, orders):
+    """Choose the axis type: ordered by the caller, numeric, ordered by a known word list, or unordered."""
     if name in orders:
         return Axis(name, "ordered_cat", order=orders[name])
     if _looks_numeric([str(v) for v in values]):

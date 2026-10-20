@@ -6,6 +6,7 @@ from .analyze_pdf import analyze_source, format_report
 
 
 def main(argv=None):
+    """Command-line entry point for checking the tables of a PDF or LaTeX article."""
     ap = argparse.ArgumentParser(
         prog="anomalynerd-pdf",
         description="Find anomalies in the results tables of a PDF or LaTeX article, run statistical "

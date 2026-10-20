@@ -21,6 +21,7 @@ from .stat_tests import statcheck, grim, grimmer, digit_tests
 
 @dataclass
 class PdfAnalysis:
+    """Everything found in one article: parsed tables, flags per table, statistical findings, and what could not be checked."""
     path: str
     parse: object                      # PdfParse or LatexParse
     table_flags: dict = field(default_factory=dict)   # (page,idx) -> list[Flag]
@@ -32,6 +33,7 @@ class PdfAnalysis:
 
 
 def analyze_pdf(path: str, expect_flat=None) -> PdfAnalysis:
+    """Parse a PDF and analyze its tables and reported statistics."""
     parse = parse_pdf(path)
     return _analyze_parse(path, parse, expect_flat, source_kind="pdf")
 
@@ -52,6 +54,7 @@ def analyze_source(path: str, expect_flat=None, detector_seconds=4.0, checkpoint
 
 
 def _analyze_parse(path, parse, expect_flat, source_kind="pdf", detector_seconds=4.0, checkpoint_dir=None) -> PdfAnalysis:
+    """Analyze an already parsed article (PDF or LaTeX). Runs the detectors on each usable table within a time limit, then the statistical checks."""
     res = PdfAnalysis(path=path, parse=parse)
     res.source_kind = source_kind
 
@@ -103,6 +106,7 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf", detector_seconds
 
 # ----------------------------------------------------------------- report
 def format_report(res: PdfAnalysis) -> str:
+    """Format a PdfAnalysis as a plain-text report."""
     p = res.parse
     L = []
     kind = getattr(res, "source_kind", "pdf")

@@ -20,6 +20,7 @@ _PRIO_MARK = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}
 
 
 def _fmt_report(flags, table_name):
+    """Format the flags for one CSV table as a plain-text report with a priority summary."""
     if not flags:
         return f"AnomalyNerd: no anomalies flagged in '{table_name}'."
     lines = [f"AnomalyNerd report for '{table_name}'  ({len(flags)} flag(s))", "=" * 64]
@@ -54,6 +55,7 @@ def _parse_orders(spec):
 
 
 def main(argv=None):
+    """Command-line entry point for checking a single CSV results table."""
     ap = argparse.ArgumentParser(prog="anomalynerd", description="Flag anomalies worth investigating in a results table.")
     ap.add_argument("csv", help="Path to the CSV results table")
     ap.add_argument("--metric", help="Name of the metric column (auto-detected if omitted)")

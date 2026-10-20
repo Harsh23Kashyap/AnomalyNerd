@@ -24,6 +24,7 @@ from .analyze import analyze
 
 # ----------------------------------------------------------------- phrasing per pattern
 def _fmt_axislist(axes, metric):
+    """Describe a metric and the axes it varies across, for example "accuracy across method and dataset"."""
     inputs = [a for a in axes if a != "value"]
     if not inputs:
         return f"{metric}"
