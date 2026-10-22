@@ -62,3 +62,18 @@ def test_latex_pipeline_checks_chi_square_with_sample_size(tmp_path):
     path.write_text('χ²(2, N = 120) = 0.10, p < .001')
     report = analyze_source(str(path))
     assert any(f.kind == 'statcheck' and f.status == 'finding' for f in report.stat_findings)
+
+
+@pytest.mark.parametrize('text', [
+    't(20) = .5, p < .001.',
+    'z = 5e-1, p < 1e-3.',
+])
+def test_sentence_period_does_not_hide_statistic(text):
+    snippets = _extract_stat_strings(text)
+    assert len(snippets) == 1
+    assert statcheck(snippets)[0].status == 'finding'
+
+
+@pytest.mark.parametrize('text', ['z = .5, p = .03e', 'z = .5, p = .03.5'])
+def test_malformed_p_value_not_truncated(text):
+    assert _extract_stat_strings(text) == []

@@ -3,7 +3,7 @@ import re
 
 NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 # Do not accept a numeric prefix of a malformed or unsupported expression.
-END_NUMBER = r"(?![\w.])"
+END_NUMBER = r"(?!\w|\.\d)"
 P_VALUE = rf"\s*,?\s*p\s*([=<>])\s*({NUMBER}){END_NUMBER}"
 _T = re.compile(rf"\bt\s*\(\s*({NUMBER})\s*\)\s*=\s*({NUMBER}){P_VALUE}", re.I)
 _F = re.compile(rf"\bF\s*\(\s*({NUMBER})\s*,\s*({NUMBER})\s*\)\s*=\s*({NUMBER}){P_VALUE}", re.I)
