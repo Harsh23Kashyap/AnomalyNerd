@@ -286,8 +286,9 @@ def _assess_and_tidy(tbl, page, idx) -> ExtractedTable:
 # ----------------------------------------------------------------- stat strings
 # Capture reported statistics from body text for the statistical/digit tests.
 # Examples: "t(38) = 2.10, p = .03"  "F(2, 57) = 4.5, p < .01"  "M = 3.42, SD = 1.1, N = 50"
-_STAT_PATTERNS = [
-    re.compile(r"\b([tFrχχ2χ²zZ]|chi2|chi-square)\s*\(?\s*([\d,\.\s]*)\)?\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*\.?(\d+\.?\d*)", re.I),
+from .stat_patterns import TEST_PATTERNS
+
+_STAT_PATTERNS = [*TEST_PATTERNS,
     re.compile(r"\bM\s*=\s*(-?\d+\.?\d*)\s*,?\s*SD\s*=\s*(\d+\.?\d*)\s*,?\s*N\s*=\s*(\d+)", re.I),
 ]
 
