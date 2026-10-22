@@ -35,14 +35,7 @@ class StatFinding:
 
 
 # ----------------------------------------------------------------- statcheck
-_T  = re.compile(r"\bt\s*\(\s*(\d+(?:\.\d+)?)\s*\)\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
-_F  = re.compile(r"\bF\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
-_R  = re.compile(r"\br\s*\(\s*(\d+)\s*\)\s*=\s*(-?\d*\.?\d+)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
-_CHI2 = re.compile(
-    r"(?:\u03c7\u00b2|\u03c72|chi\s*-?\s*square|chi2)\s*\("
-    r"\s*(\d+(?:\.\d+)?)\s*(?:,\s*N\s*=\s*\d+)?\s*\)"
-    r"\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
-_Z = re.compile(r"\bz\s*=\s*(-?\d+\.?\d*)\s*,?\s*p\s*([=<>])\s*(\.?\d+\.?\d*)", re.I)
+from .stat_patterns import _T, _F, _R, _CHI2, _Z
 
 
 def _reported_p(num_str: str) -> float:
@@ -63,7 +56,7 @@ def statcheck(stat_strings: list) -> list:
         if m:
             df = float(m.group(1)); tval = abs(float(m.group(2)))
             op = m.group(3); p_rep = _reported_p(m.group(4))
-            p_calc = 2 * _st.t.sf(tval, df)
+            p_calc = 2 * _st.t.sf(tval, df) if math.isfinite(tval) and math.isfinite(df) else math.nan
             checked += 1
             findings.append(_compare_p("t", s, p_rep, op, p_calc))
             continue
@@ -71,7 +64,9 @@ def statcheck(stat_strings: list) -> list:
         if m:
             d1 = float(m.group(1)); d2 = float(m.group(2)); fval = float(m.group(3))
             op = m.group(4); p_rep = _reported_p(m.group(5))
-            p_calc = _st.f.sf(fval, d1, d2)
+            p_calc = (_st.f.sf(fval, d1, d2)
+                      if all(math.isfinite(x) for x in (fval, d1, d2)) and fval >= 0
+                      else math.nan)
             checked += 1
             findings.append(_compare_p("F", s, p_rep, op, p_calc))
             continue
@@ -79,26 +74,28 @@ def statcheck(stat_strings: list) -> list:
         if m:
             dfr = float(m.group(1)); rval = abs(float(m.group(2)))
             op = m.group(3); p_rep = _reported_p(m.group(4))
-            if rval < 1:
-                tval = rval * math.sqrt(dfr / max(1e-9, (1 - rval**2)))
-                p_calc = 2 * _st.t.sf(abs(tval), dfr)
-                checked += 1
-                findings.append(_compare_p("r", s, p_rep, op, p_calc))
+            p_calc = math.nan
+            if math.isfinite(dfr) and dfr > 0 and math.isfinite(rval) and rval <= 1:
+                p_calc = 0.0 if rval == 1 else 2 * _st.t.sf(
+                    rval * math.sqrt(dfr / (1 - rval**2)), dfr)
+            checked += 1
+            findings.append(_compare_p("r", s, p_rep, op, p_calc))
             continue
         m = _CHI2.search(s)
         if m:
             df = float(m.group(1)); chi2_value = float(m.group(2))
             op = m.group(3); p_rep = _reported_p(m.group(4))
-            if chi2_value >= 0:
-                p_calc = _st.chi2.sf(chi2_value, df)
-                checked += 1
-                findings.append(_compare_p("chi-square", s, p_rep, op, p_calc))
+            p_calc = (_st.chi2.sf(chi2_value, df)
+                      if math.isfinite(chi2_value) and math.isfinite(df) and chi2_value >= 0
+                      else math.nan)
+            checked += 1
+            findings.append(_compare_p("chi-square", s, p_rep, op, p_calc))
             continue
         m = _Z.search(s)
         if m:
             z_value = float(m.group(1))
             op = m.group(2); p_rep = _reported_p(m.group(3))
-            p_calc = 2 * _st.norm.sf(abs(z_value))
+            p_calc = 2 * _st.norm.sf(abs(z_value)) if math.isfinite(z_value) else math.nan
             checked += 1
             findings.append(_compare_p("z", s, p_rep, op, p_calc))
     if checked == 0:
@@ -111,6 +108,11 @@ def statcheck(stat_strings: list) -> list:
 
 
 def _compare_p(kind, s, p_rep, op, p_calc) -> StatFinding:
+    if not all(math.isfinite(p) and 0 <= p <= 1 for p in (p_rep, p_calc)):
+        return StatFinding(
+            "statcheck", "not_applicable",
+            f"cannot recheck {kind}-test: invalid statistic, degrees of freedom, or p-value",
+            evidence={"reported": s, "operator": op})
     ev = {"reported": s, "p_reported": round(p_rep, 4), "p_recomputed": round(p_calc, 4),
           "operator": op}
     rep_sig = (p_rep < 0.05) if op == "=" else (p_rep <= 0.05 if op == "<" else False)
