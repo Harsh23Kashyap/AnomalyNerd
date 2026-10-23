@@ -298,3 +298,29 @@ def test_caption_marked_shrapnel_is_not_used_as_headers():
     assert et.status == "skipped", et.reason
     assert et.tidy is None
     assert "extraction failure" in et.reason
+
+
+def test_grim_boundary_half_unit_is_not_false_flagged():
+    # Achievable means at exact half-unit rounding boundaries must pass:
+    # 0.75 reported as 0.8 (N=4, 1dp), 0.125 as 0.13 (N=8, 2dp).
+    for s in ["M = 0.8, SD = 1.0, N = 4", "M = 0.13, SD = 1.0, N = 8",
+              "M = 1.3, SD = 1.0, N = 4", "M = 0.38, SD = 1.0, N = 8"]:
+        out = grim([s])
+        assert all(f.status != "finding" for f in out), \
+            f"boundary-achievable mean falsely flagged: {s}"
+        assert any(f.status == "ok" for f in out)
+
+
+def test_grim_still_flags_truly_impossible():
+    # one past the boundary must still fail: 0.9 with N=4 (nearest 1.00, diff .10)
+    out = grim(["M = 0.9, SD = 1.0, N = 4"])
+    assert any(f.status == "finding" for f in out)
+
+
+def test_grimmer_runs_when_mean_exactly_at_boundary():
+    # mean 0.8/N=4 passes GRIM at the boundary, so GRIMMER must evaluate the SD
+    # rather than skip as "mean already fails GRIM"
+    from anomalynerd.stat_tests import grimmer
+    out = grimmer(["M = 0.8, SD = 1.0, N = 4"])
+    assert any(f.status in ("ok", "finding") for f in out), \
+        "GRIMMER skipped a mean that GRIM accepts at the rounding boundary"
