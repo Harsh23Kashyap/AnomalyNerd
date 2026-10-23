@@ -123,6 +123,8 @@ def analyze(t: TidyTable, expected_monotonic: dict | None = None, expect_flat: l
     flags += detectors.detect_trends(t, index_axes=idx, expect_flat=expect_flat)
     flags = _suppress_index_axis(flags, idx)
     flags = _suppress_jumps_adjacent_to_outliers(flags)
+    for note in detectors.drain_notes():
+        print(f"  [note] {note}")
     return score(flags)
 
 

@@ -348,3 +348,48 @@ def test_lin_fit_scaling_preserves_normal_results():
     assert abs(intercept) < 1e-9
     assert resid_sd < 1e-9
     assert abs(_pearson([1, 2, 3, 4], [2.0, 4.0, 6.0, 8.0]) - 1.0) < 1e-9
+
+
+def test_extreme_mixed_series_emits_explicit_diagnostics():
+    # A series whose magnitudes defeat the fit must SAY so (notes channel),
+    # not silently report nothing - and a true outlier must still be flagged.
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in
+                        enumerate([1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0])])
+    D.drain_notes()
+    outlier_flags = D.detect_point_outliers(t)
+    D.detect_level_shifts(t)
+    D.detect_trends(t)
+    notes = D.drain_notes()
+    assert any(f.type == "point_outlier" for f in outlier_flags)
+    assert any("not determinable" in n for n in notes), \
+        "degenerate fits must be reported, not silently skipped"
+
+
+def test_uniformly_huge_series_fits_without_notes():
+    # Scaling handles uniformly large values; no diagnostic is due.
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    vals = [1e308, 1.5e308, 2e308, 1.2e308, 1.8e308, 2.5e308, 3e308, 2.9e308]
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in enumerate(vals)])
+    D.drain_notes()
+    D.detect_level_shifts(t); D.detect_trends(t); D.detect_point_outliers(t)
+    assert D.drain_notes() == []
+
+
+def test_bounded_runner_surfaces_notes():
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.bounded import run_bounded
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in
+                        enumerate([1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0])])
+    _, runs = run_bounded(t, seconds=10)
+    notes = [n for r in runs for n in r.get("notes", [])]
+    assert any("not determinable" in n for n in notes), \
+        "notes must travel through the bounded runner into report diagnostics"

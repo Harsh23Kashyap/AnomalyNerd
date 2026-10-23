@@ -35,6 +35,24 @@ def _sq(v):
     return v * v
 
 
+# Honesty channel: when extreme values make a fit non-determinable (overflow
+# saturates to inf, or inf/inf yields NaN), detectors record a note instead of
+# silently reporting nothing. The bounded runner drains these into the report's
+# could-not-check list; direct callers can read them via drain_notes().
+_NOTES = []
+
+
+def _note(msg):
+    _NOTES.append(msg)
+
+
+def drain_notes():
+    """Return and clear the notes recorded since the last drain."""
+    notes = list(_NOTES)
+    del _NOTES[:]
+    return notes
+
+
 def _mad(values):
     if len(values) < 2:
         return 0.0
@@ -428,7 +446,14 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
             # near-perfect line (high R^2); a flat-but-noisy baseline (ozone) has low R^2 even
             # if it has a slight slope. Raw slope alone is too sensitive.
             base_var = _sq(_safe_pstdev(base_vals))
-            r2 = 0.0 if base_var == 0 else max(0.0, 1.0 - _sq(resid_sd) / base_var)
+            if base_var == 0:
+                r2 = 0.0
+            elif not (math.isfinite(base_var) and math.isfinite(_sq(resid_sd))):
+                _note(f"detect_level_shifts: baseline fit not determinable on table "
+                      f"{t.name!r} (extreme values); no shift claims made for this series")
+                r2 = 0.0
+            else:
+                r2 = max(0.0, 1.0 - _sq(resid_sd) / base_var)
             baseline_is_trend = (r2 >= 0.6) and (abs(slope) * (xs[-1] - xs[0]) > 2 * (resid_sd or 1e-9)) if len(xs) > 1 else False
             # spread to compare against = residual SD around the (possibly sloped) baseline
             ref_sd = resid_sd or sd
@@ -757,7 +782,14 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                 # trend. Only genuine INTERIOR spikes survive.
                 base_var = _sq(_safe_pstdev(ys)) if len(ys) > 1 else 0.0
                 resid_var = _sq(_safe_pstdev(resid)) if len(resid) > 1 else 0.0
-                r2 = 0.0 if base_var == 0 else max(0.0, 1.0 - resid_var / base_var)
+                if base_var == 0:
+                    r2 = 0.0
+                elif not (math.isfinite(base_var) and math.isfinite(resid_var)):
+                    _note(f"detect_point_outliers: trend fit not determinable on table "
+                          f"{t.name!r} (extreme values); trend-endpoint guard off for this series")
+                    r2 = 0.0
+                else:
+                    r2 = max(0.0, 1.0 - resid_var / base_var)
                 is_trend = r2 >= 0.9
             else:
                 med = median(ys); resid = [y - med for y in ys]
@@ -766,6 +798,10 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
             rmed = median(resid)
             mad = median([abs(r - rmed) for r in resid]) or 0.0
             scale = 1.4826 * mad
+            if not math.isfinite(scale):
+                _note(f"detect_point_outliers: residual scale not finite on table {t.name!r} "
+                      f"(extreme values); no outlier claims made for this series")
+                continue
             if scale == 0:
                 continue  # constant series already handled by the near-constant check above
             zs = [(abs(r - rmed) / scale, i) for i, r in enumerate(resid)]
@@ -937,7 +973,12 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
             var = _sq(_safe_pstdev(ys)) if len(ys) > 1 else 0.0
             if var == 0:
                 continue
-            r2 = max(0.0, 1.0 - _sq(resid_sd) / var)
+            if not (math.isfinite(var) and math.isfinite(_sq(resid_sd))):
+                _note(f"detect_trends: fit not determinable on table {t.name!r} "
+                      f"(extreme values); no trend claims made for this series")
+                r2 = 0.0
+            else:
+                r2 = max(0.0, 1.0 - _sq(resid_sd) / var)
             total_change = slope * (xs[-1] - xs[0])
             rng = max(ys) - min(ys) or 1.0
             # Linear strength (Pearson) and monotonic association (Spearman) are DIFFERENT

@@ -17,9 +17,9 @@ def _worker(conn,name,table,expect_flat):
         kwargs = {'expect_flat':expect_flat} if name in ('detect_level_shifts','detect_trends') else {}
         if name == 'detect_trends': kwargs['index_axes'] = detectors.index_like_axes(table)
         flags = getattr(detectors,name)(table,**kwargs)
-        conn.send({'status':'completed','flags':[asdict(f) for f in flags]})
+        conn.send({'status':'completed','flags':[asdict(f) for f in flags],'notes':detectors.drain_notes()})
     except Exception as exc:
-        conn.send({'status':'failed','reason':type(exc).__name__+': '+str(exc),'flags':[]})
+        conn.send({'status':'failed','reason':type(exc).__name__+': '+str(exc),'flags':[],'notes':detectors.drain_notes()})
     finally: conn.close()
 
 def run_bounded(table,seconds=4.0,checkpoint_dir=None,expect_flat=None):
