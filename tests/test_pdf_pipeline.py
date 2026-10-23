@@ -324,3 +324,27 @@ def test_grimmer_runs_when_mean_exactly_at_boundary():
     out = grimmer(["M = 0.8, SD = 1.0, N = 4"])
     assert any(f.status in ("ok", "finding") for f in out), \
         "GRIMMER skipped a mean that GRIM accepts at the rounding boundary"
+
+
+def test_detectors_survive_extreme_finite_values():
+    # a garbage cell like 1e308 (parseable from scientific notation) must not
+    # crash the detectors that fit lines or take SDs; a crash kills the whole report
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    vals = [1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0, 8.0]
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in enumerate(vals)])
+    for d in (D.detect_level_shifts, D.detect_point_outliers, D.detect_trends,
+              D.detect_numeric_jumps, D.detect_monotonicity, D.detect_win_reversals,
+              D.detect_cat_exceptions, D.detect_duplicates_and_flatness):
+        d(t)  # must not raise
+
+
+def test_lin_fit_scaling_preserves_normal_results():
+    from anomalynerd.detectors import _lin_fit, _pearson
+    slope, intercept, resid_sd = _lin_fit([1, 2, 3, 4], [2.0, 4.0, 6.0, 8.0])
+    assert abs(slope - 2.0) < 1e-9
+    assert abs(intercept) < 1e-9
+    assert resid_sd < 1e-9
+    assert abs(_pearson([1, 2, 3, 4], [2.0, 4.0, 6.0, 8.0]) - 1.0) < 1e-9
