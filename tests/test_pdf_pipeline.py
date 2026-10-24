@@ -298,3 +298,98 @@ def test_caption_marked_shrapnel_is_not_used_as_headers():
     assert et.status == "skipped", et.reason
     assert et.tidy is None
     assert "extraction failure" in et.reason
+
+
+def test_grim_boundary_half_unit_is_not_false_flagged():
+    # Achievable means at exact half-unit rounding boundaries must pass:
+    # 0.75 reported as 0.8 (N=4, 1dp), 0.125 as 0.13 (N=8, 2dp).
+    for s in ["M = 0.8, SD = 1.0, N = 4", "M = 0.13, SD = 1.0, N = 8",
+              "M = 1.3, SD = 1.0, N = 4", "M = 0.38, SD = 1.0, N = 8"]:
+        out = grim([s])
+        assert all(f.status != "finding" for f in out), \
+            f"boundary-achievable mean falsely flagged: {s}"
+        assert any(f.status == "ok" for f in out)
+
+
+def test_grim_still_flags_truly_impossible():
+    # one past the boundary must still fail: 0.9 with N=4 (nearest 1.00, diff .10)
+    out = grim(["M = 0.9, SD = 1.0, N = 4"])
+    assert any(f.status == "finding" for f in out)
+
+
+def test_grimmer_runs_when_mean_exactly_at_boundary():
+    # mean 0.8/N=4 passes GRIM at the boundary, so GRIMMER must evaluate the SD
+    # rather than skip as "mean already fails GRIM"
+    from anomalynerd.stat_tests import grimmer
+    out = grimmer(["M = 0.8, SD = 1.0, N = 4"])
+    assert any(f.status in ("ok", "finding") for f in out), \
+        "GRIMMER skipped a mean that GRIM accepts at the rounding boundary"
+
+
+def test_detectors_survive_extreme_finite_values():
+    # a garbage cell like 1e308 (parseable from scientific notation) must not
+    # crash the detectors that fit lines or take SDs; a crash kills the whole report
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    vals = [1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0, 8.0]
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in enumerate(vals)])
+    for d in (D.detect_level_shifts, D.detect_point_outliers, D.detect_trends,
+              D.detect_numeric_jumps, D.detect_monotonicity, D.detect_win_reversals,
+              D.detect_cat_exceptions, D.detect_duplicates_and_flatness):
+        d(t)  # must not raise
+
+
+def test_lin_fit_scaling_preserves_normal_results():
+    from anomalynerd.detectors import _lin_fit, _pearson
+    slope, intercept, resid_sd = _lin_fit([1, 2, 3, 4], [2.0, 4.0, 6.0, 8.0])
+    assert abs(slope - 2.0) < 1e-9
+    assert abs(intercept) < 1e-9
+    assert resid_sd < 1e-9
+    assert abs(_pearson([1, 2, 3, 4], [2.0, 4.0, 6.0, 8.0]) - 1.0) < 1e-9
+
+
+def test_extreme_mixed_series_emits_explicit_diagnostics():
+    # A series whose magnitudes defeat the fit must SAY so (notes channel),
+    # not silently report nothing - and a true outlier must still be flagged.
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in
+                        enumerate([1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0])])
+    D.drain_notes()
+    outlier_flags = D.detect_point_outliers(t)
+    D.detect_level_shifts(t)
+    D.detect_trends(t)
+    notes = D.drain_notes()
+    assert any(f.type == "point_outlier" for f in outlier_flags)
+    assert any("not determinable" in n for n in notes), \
+        "degenerate fits must be reported, not silently skipped"
+
+
+def test_uniformly_huge_series_fits_without_notes():
+    # Scaling handles uniformly large values; no diagnostic is due.
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd import detectors as D
+    vals = [1e308, 1.5e308, 2e308, 1.2e308, 1.8e308, 2.5e308, 3e308, 2.9e308]
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in enumerate(vals)])
+    D.drain_notes()
+    D.detect_level_shifts(t); D.detect_trends(t); D.detect_point_outliers(t)
+    assert D.drain_notes() == []
+
+
+def test_bounded_runner_surfaces_notes():
+    from anomalynerd.model import Axis, TidyTable
+    from anomalynerd.bounded import run_bounded
+    t = TidyTable(name="T", axes={"x": Axis("x", "numeric")}, entity_axis=None,
+                  metric_name="acc", lower_is_better=False,
+                  rows=[{"x": i, "value": v} for i, v in
+                        enumerate([1.0, 2.0, 3.0, 4.0, -1e308, 5.0, 6.0, 7.0])])
+    _, runs = run_bounded(t, seconds=10)
+    notes = [n for r in runs for n in r.get("notes", [])]
+    assert any("not determinable" in n for n in notes), \
+        "notes must travel through the bounded runner into report diagnostics"

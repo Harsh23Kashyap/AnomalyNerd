@@ -7,8 +7,50 @@ Design rules:
 """
 from __future__ import annotations
 from itertools import product
+import math
 from statistics import median
 from .model import TidyTable, Flag, Axis, is_num
+
+
+def _safe_pstdev(values):
+    """Population SD that cannot overflow on extreme-but-finite values.
+
+    statistics.pstdev squares the deviations, so a garbage 1e308 cell raises
+    OverflowError and kills the whole report. Scale by the max magnitude,
+    compute on O(1) numbers, rescale. Returns 0.0 for fewer than two values,
+    matching pstdev of a single element."""
+    vals = [float(v) for v in values]
+    if len(vals) < 2:
+        return 0.0
+    scale = max(abs(v) for v in vals)
+    if not math.isfinite(scale) or scale == 0:
+        return 0.0
+    from statistics import pstdev
+    return pstdev([v / scale for v in vals]) * scale
+
+
+def _sq(v):
+    """v*v that saturates to inf on huge floats instead of raising
+    (float ** 2 raises OverflowError(34); float * float saturates)."""
+    return v * v
+
+
+# Honesty channel: when extreme values make a fit non-determinable (overflow
+# saturates to inf, or inf/inf yields NaN), detectors record a note instead of
+# silently reporting nothing. The bounded runner drains these into the report's
+# could-not-check list; direct callers can read them via drain_notes().
+_NOTES = []
+
+
+def _note(msg):
+    _NOTES.append(msg)
+
+
+def drain_notes():
+    """Return and clear the notes recorded since the last drain."""
+    notes = list(_NOTES)
+    del _NOTES[:]
+    return notes
 
 
 def _mad(values):
@@ -68,7 +110,7 @@ def _jump_is_endpoint_of_climb(ys, jump_index):
     m = mean(other_signed) if other_signed else 0.0
     if steps[jump_index] * m <= 0:
         return False                                   # final jump must continue the same direction
-    cv = (pstdev(other_signed) / abs(m)) if other_signed and m != 0 else 999.0
+    cv = (_safe_pstdev(other_signed) / abs(m)) if other_signed and m != 0 else 999.0
     return cv < 0.5                                     # ...and be a tight, consistent climb
 
 
@@ -393,7 +435,7 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
             nb = max(min_baseline, int(len(pts) * baseline_frac))
             base_pts = pts[:nb]
             base_vals = [v for _, v in base_pts]
-            mu = mean(base_vals); sd = pstdev(base_vals) or (abs(mu) * 0.05) or 1.0
+            mu = mean(base_vals); sd = _safe_pstdev(base_vals) or (abs(mu) * 0.05) or 1.0
 
             # TREND GUARD: if the baseline is itself trending (not flat), fit its linear
             # trend and judge later points against the EXTRAPOLATED trend, not a flat mean.
@@ -403,8 +445,15 @@ def detect_level_shifts(t: TidyTable, baseline_frac=0.30, min_baseline=5,
             # TREND vs FLAT: use R^2 of the baseline linear fit. A genuine trend (CO2) is a
             # near-perfect line (high R^2); a flat-but-noisy baseline (ozone) has low R^2 even
             # if it has a slight slope. Raw slope alone is too sensitive.
-            base_var = pstdev(base_vals) ** 2
-            r2 = 0.0 if base_var == 0 else max(0.0, 1.0 - (resid_sd ** 2) / base_var)
+            base_var = _sq(_safe_pstdev(base_vals))
+            if base_var == 0:
+                r2 = 0.0
+            elif not (math.isfinite(base_var) and math.isfinite(_sq(resid_sd))):
+                _note(f"detect_level_shifts: baseline fit not determinable on table "
+                      f"{t.name!r} (extreme values); no shift claims made for this series")
+                r2 = 0.0
+            else:
+                r2 = max(0.0, 1.0 - _sq(resid_sd) / base_var)
             baseline_is_trend = (r2 >= 0.6) and (abs(slope) * (xs[-1] - xs[0]) > 2 * (resid_sd or 1e-9)) if len(xs) > 1 else False
             # spread to compare against = residual SD around the (possibly sloped) baseline
             ref_sd = resid_sd or sd
@@ -500,18 +549,35 @@ def _logspace_if_wide(ys):
 
 
 def _lin_fit(xs, ys):
-    """Simple least-squares slope/intercept + residual SD. Returns (0,mean,sd) if degenerate."""
+    """Simple least-squares slope/intercept + residual SD. Returns (0,mean,sd) if degenerate.
+
+    Both series are scaled by their max magnitude before fitting, so extreme-but-finite
+    cells (a garbage 1e308 from a bad parse) cannot overflow the squared sums or produce
+    inf/inf slopes; slope, intercept, and residual SD are rescaled afterwards."""
     from statistics import mean, pstdev
+    xs = [float(x) for x in xs]
+    ys = [float(y) for y in ys]
+    xscale = max((abs(x) for x in xs), default=0.0)
+    yscale = max((abs(y) for y in ys), default=0.0)
+    if not math.isfinite(xscale) or xscale == 0:
+        xscale = 1.0
+    if not math.isfinite(yscale) or yscale == 0:
+        yscale = 1.0
+    xs = [x / xscale for x in xs]
+    ys = [y / yscale for y in ys]
     n = len(xs)
     if n < 2 or len(set(xs)) < 2:
-        return 0.0, (mean(ys) if ys else 0.0), (pstdev(ys) if ys else 0.0)
+        return (0.0,
+                (mean(ys) * yscale if ys else 0.0),
+                (pstdev(ys) * yscale if len(ys) > 1 else 0.0))
     mx = mean(xs); my = mean(ys)
     sxx = sum((x - mx) ** 2 for x in xs)
     sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
     slope = sxy / sxx if sxx else 0.0
     intercept = my - slope * mx
     resid = [y - (intercept + slope * x) for x, y in zip(xs, ys)]
-    return slope, intercept, (pstdev(resid) if len(resid) > 1 else 0.0)
+    resid_sd = pstdev(resid) if len(resid) > 1 else 0.0
+    return slope * (yscale / xscale), intercept * yscale, resid_sd * yscale
 
 
 def _pearson(xs, ys):
@@ -521,6 +587,12 @@ def _pearson(xs, ys):
     n = len(xs)
     if n < 2:
         return None
+    # scale both series so extreme-but-finite values cannot overflow the
+    # squared sums into inf/inf (NaN) - correlation is scale-invariant
+    xscale = max((abs(x) for x in xs), default=0.0) or 1.0
+    yscale = max((abs(y) for y in ys), default=0.0) or 1.0
+    xs = [x / xscale for x in xs]
+    ys = [y / yscale for y in ys]
     mx = mean(xs); my = mean(ys)
     sxx = sum((x - mx) ** 2 for x in xs)
     syy = sum((y - my) ** 2 for y in ys)
@@ -708,9 +780,16 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
                 # largest residual is usually the newest point of an accelerating curve, NOT a
                 # true outlier (e.g. latest-year CO2). Don't flag boundary points of a good-fit
                 # trend. Only genuine INTERIOR spikes survive.
-                base_var = (pstdev(ys) ** 2) if len(ys) > 1 else 0.0
-                resid_var = (pstdev(resid) ** 2) if len(resid) > 1 else 0.0
-                r2 = 0.0 if base_var == 0 else max(0.0, 1.0 - resid_var / base_var)
+                base_var = _sq(_safe_pstdev(ys)) if len(ys) > 1 else 0.0
+                resid_var = _sq(_safe_pstdev(resid)) if len(resid) > 1 else 0.0
+                if base_var == 0:
+                    r2 = 0.0
+                elif not (math.isfinite(base_var) and math.isfinite(resid_var)):
+                    _note(f"detect_point_outliers: trend fit not determinable on table "
+                          f"{t.name!r} (extreme values); trend-endpoint guard off for this series")
+                    r2 = 0.0
+                else:
+                    r2 = max(0.0, 1.0 - resid_var / base_var)
                 is_trend = r2 >= 0.9
             else:
                 med = median(ys); resid = [y - med for y in ys]
@@ -719,6 +798,10 @@ def detect_point_outliers(t: TidyTable, z_thresh=3.5, min_points=5):
             rmed = median(resid)
             mad = median([abs(r - rmed) for r in resid]) or 0.0
             scale = 1.4826 * mad
+            if not math.isfinite(scale):
+                _note(f"detect_point_outliers: residual scale not finite on table {t.name!r} "
+                      f"(extreme values); no outlier claims made for this series")
+                continue
             if scale == 0:
                 continue  # constant series already handled by the near-constant check above
             zs = [(abs(r - rmed) / scale, i) for i, r in enumerate(resid)]
@@ -887,10 +970,15 @@ def detect_trends(t: TidyTable, r2_min=0.5, min_points=6, index_axes=None, expec
                 continue
             xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
             slope, intercept, resid_sd = _lin_fit(xs, ys)
-            var = pstdev(ys) ** 2 if len(ys) > 1 else 0.0
+            var = _sq(_safe_pstdev(ys)) if len(ys) > 1 else 0.0
             if var == 0:
                 continue
-            r2 = max(0.0, 1.0 - (resid_sd ** 2) / var)
+            if not (math.isfinite(var) and math.isfinite(_sq(resid_sd))):
+                _note(f"detect_trends: fit not determinable on table {t.name!r} "
+                      f"(extreme values); no trend claims made for this series")
+                r2 = 0.0
+            else:
+                r2 = max(0.0, 1.0 - _sq(resid_sd) / var)
             total_change = slope * (xs[-1] - xs[0])
             rng = max(ys) - min(ys) or 1.0
             # Linear strength (Pearson) and monotonic association (Spearman) are DIFFERENT

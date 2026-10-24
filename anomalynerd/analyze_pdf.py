@@ -73,6 +73,8 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf", detector_seconds
                     for run in runs:
                         if run["status"] != "completed":
                             res.could_not_check.append(f"{where} metric {tidy.metric_name}: {run['detector']} {run['status']} ({run.get('reason','')}); limit {detector_seconds}s")
+                        for note in run.get("notes", []):
+                            res.could_not_check.append(f"{where} metric {tidy.metric_name}: {note}")
                 except Exception as e:
                     flags = []
                     res.could_not_check.append(

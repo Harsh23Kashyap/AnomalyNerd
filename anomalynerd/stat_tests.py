@@ -169,7 +169,9 @@ def grim(stat_strings: list) -> list:
         checked += 1
         # the nearest achievable mean at this N and decimal precision
         nearest = round(mean * n) / n
-        if round(abs(nearest - mean), decimals) > 0.5 * 10**(-decimals):
+        # epsilon as in grimmer: at the exact half-unit boundary (e.g. 0.75
+        # reported as 0.8 with N=4) float error must not flip ok to finding
+        if abs(nearest - mean) > 0.5 * 10**(-decimals) + 1e-9:
             findings.append(StatFinding("grim", "finding",
                 f"reported mean {mean} with N={n} is not achievable for an integer-item "
                 f"measure (nearest achievable is {nearest:.{decimals}f}) — worth checking",
@@ -205,7 +207,7 @@ def grimmer(stat_strings: list) -> list:
         if n < 2 or n > 1000 or sd_dec == 0 or sd < 0:
             continue
         mean_dec = len((m.group(1).split(".")[1]) if "." in m.group(1) else "")
-        if mean_dec and round(abs(round(mean * n) / n - mean), mean_dec) > 0.5 * 10 ** (-mean_dec):
+        if mean_dec and abs(round(mean * n) / n - mean) > 0.5 * 10 ** (-mean_dec) + 1e-9:
             continue  # GRIM already flags this; don't double-report
         checked += 1
         T = round(mean * n)                 # integer grand total of the items
