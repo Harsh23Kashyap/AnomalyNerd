@@ -77,9 +77,7 @@ the pipeline still runs and says so. On a paired sample, PDF table coverage rose
 
 Run the tests:
 ```bash
-pytest -q tests/test_pdf_pipeline.py tests/test_caption.py tests/test_datasets.py \
-  tests/test_measurement_integrity.py tests/test_synthetic.py \
-  tests/test_html_report.py tests/test_integrity_gate.py     # 85 tests, a few seconds
+pytest -q    # 131 tests across 9 test files, a few seconds
 ```
 
 ---
