@@ -21,6 +21,7 @@ class Axis:
     order: Optional[list] = None    # explicit order for ordered_cat / display order
 
     def sorted_levels(self, levels):
+        """Sort the levels by this axis type. Numeric levels sort by value, with non-numeric ones last."""
         levels = list(levels)
         if self.kind == "numeric":
             def _key(x):
@@ -46,6 +47,7 @@ class TidyTable:
     rows: list[dict]                # each: {axis1:.., axis2:.., 'value': float|None}
 
     def levels(self, axis_name: str) -> list:
+        """Distinct values of an axis in the order they first appear in the rows."""
         seen = []
         for r in self.rows:
             v = r.get(axis_name)
@@ -62,6 +64,7 @@ class TidyTable:
         return out
 
     def value_at(self, **coords):
+        """Metric value of the first row matching all given coordinates, or MISSING if none matches."""
         for r in self.rows:
             if all(r.get(k) == v for k, v in coords.items()):
                 return r.get("value")
@@ -82,6 +85,7 @@ class Flag:
     suggestion: str = ""
 
     def to_dict(self):
+        """Plain-dict form of the flag with strength and support rounded to four places."""
         d = {
             "type": self.type, "table": self.table, "axis": self.axis,
             "coords": self.coords, "detail": self.detail,

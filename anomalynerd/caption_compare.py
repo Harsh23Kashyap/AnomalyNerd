@@ -93,6 +93,7 @@ def compare_captions(generated: str, real: str) -> dict:
 
 
 def format_comparison(gen: str, real: str) -> str:
+    """Format the comparison of a generated caption and the real one as plain text."""
     rep = compare_captions(gen, real)
     L = ["Caption comparison (checkable claims only)",
          "=" * 48,

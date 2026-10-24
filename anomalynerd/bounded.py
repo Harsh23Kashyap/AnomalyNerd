@@ -13,6 +13,7 @@ DETECTORS = ('detect_numeric_jumps','detect_win_reversals','detect_monotonicity'
 VERSION = 'bounded-v1'
 
 def _worker(conn,name,table,expect_flat):
+    """Child-process entry point: run one detector and send back its flags, or the failure reason, through the pipe."""
     try:
         kwargs = {'expect_flat':expect_flat} if name in ('detect_level_shifts','detect_trends') else {}
         if name == 'detect_trends': kwargs['index_axes'] = detectors.index_like_axes(table)
@@ -23,6 +24,7 @@ def _worker(conn,name,table,expect_flat):
     finally: conn.close()
 
 def run_bounded(table,seconds=4.0,checkpoint_dir=None,expect_flat=None):
+    """Run each detector with a time limit. Reuses saved results from checkpoint_dir when the table, detector code and settings are unchanged."""
     if not 0 < seconds <= 300: raise ValueError('detector time limit must be in (0,300] seconds')
     payload={'detector_source':hashlib.sha256(inspect.getsource(detectors).encode()).hexdigest(),'runner_source':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'version':VERSION,'table':asdict(table),'expect_flat':expect_flat,'seconds':seconds}
     digest=hashlib.sha256(json.dumps(payload,sort_keys=True,default=str).encode()).hexdigest()

@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def render_report(table, flags, caption=None):
+    """Build a standalone HTML page with one card per flag."""
     def esc(value):
         return html.escape(str(value), quote=True)
 

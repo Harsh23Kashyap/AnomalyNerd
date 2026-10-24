@@ -60,12 +60,14 @@ class PdfParse:
 
 # ----------------------------------------------------------------- helpers
 def _clean(cell) -> str:
+    """Collapse whitespace in a cell. None becomes an empty string."""
     if cell is None:
         return ""
     return re.sub(r"\s+", " ", str(cell)).strip()
 
 
 def _numeric_fraction(values) -> float:
+    """Share of the non-empty values that parse as numbers."""
     vals = [v for v in values if _clean(v) != ""]
     if not vals:
         return 0.0
@@ -294,6 +296,7 @@ _STAT_PATTERNS = [*TEST_PATTERNS,
 
 
 def _extract_stat_strings(text: str) -> list:
+    """Find reported statistics in text: test results with a p-value (t, F, r, chi-square, z) and "M, SD, N" triples."""
     out = []
     for pat in _STAT_PATTERNS:
         for m in pat.finditer(text):
@@ -303,6 +306,7 @@ def _extract_stat_strings(text: str) -> list:
 
 # ----------------------------------------------------------------- main entry
 def parse_pdf(path: str) -> PdfParse:
+    """Extract tables and reported statistic strings from a PDF."""
     tables = []
     stat_strings = []
     text_pages = 0

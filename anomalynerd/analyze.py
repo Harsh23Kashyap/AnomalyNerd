@@ -6,6 +6,7 @@ from . import detectors
 
 
 def score(flags: list[Flag]) -> list[Flag]:
+    """Set each flag's priority (HIGH, MEDIUM or LOW) from its strength and support, then return the flags."""
     for f in flags:
         s = f.strength
         sup = f.support
@@ -112,6 +113,7 @@ def analyze(t: TidyTable, expected_monotonic: dict | None = None, expect_flat: l
     # that product explode and the analysis hang. A genuine results table has only a few axes.
     # When a table is clearly mis-parsed this way, skip detector analysis rather than hang; the
     # PDF/LaTeX report already lists such tables under "what could not be checked".
+    """Run every detector on a table and return the scored flags. Returns an empty list when the table looks like a garbled parse."""
     if is_pathological(t):
         return []
 
@@ -133,6 +135,7 @@ def analyze(t: TidyTable, expected_monotonic: dict | None = None, expect_flat: l
 
 
 def report(flags: list[Flag]) -> str:
+    """Format flags as plain text, one block per flag."""
     if not flags:
         return "No anomalies flagged."
     lines = []

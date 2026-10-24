@@ -27,6 +27,7 @@ from .ingest import _parse_number
 
 @dataclass
 class StatFinding:
+    """One result from a statistical check: its kind, status, readable detail, severity and supporting numbers."""
     kind: str                 # "statcheck" | "grim" | "benford" | "terminal_digit"
     status: str               # "finding" | "ok" | "not_applicable"
     detail: str               # human-readable result or reason
@@ -39,6 +40,7 @@ from .stat_patterns import _T, _F, _R, _CHI2, _Z
 
 
 def _reported_p(num_str: str) -> float:
+    """Convert a reported p-value string to a float. A leading "." is read as "0."."""
     s = num_str.strip()
     if s.startswith("."):
         s = "0" + s
@@ -108,6 +110,7 @@ def statcheck(stat_strings: list) -> list:
 
 
 def _compare_p(kind, s, p_rep, op, p_calc) -> StatFinding:
+    """Compare a reported p-value with the recomputed one and return a StatFinding."""
     if not all(math.isfinite(p) and 0 <= p <= 1 for p in (p_rep, p_calc)):
         return StatFinding(
             "statcheck", "not_applicable",

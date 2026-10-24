@@ -54,6 +54,7 @@ def drain_notes():
 
 
 def _mad(values):
+    """Median absolute deviation of the values. Returns 0.0 when there are fewer than two values."""
     if len(values) < 2:
         return 0.0
     m = median(values)
@@ -171,6 +172,7 @@ def detect_numeric_jumps(t: TidyTable, k_mad=4.0, ratio=3.0, min_points=3):
 
 
 def _suggest_midpoints(a, b):
+    """Return two evenly spaced values between two numeric levels, rounded to four places. Returns None if either level is not a number."""
     try:
         a, b = float(a), float(b)
     except Exception:
