@@ -21,6 +21,10 @@ def score(flags: list[Flag]) -> list[Flag]:
             hi = sup >= 0.9; med = sup >= 0.75
         elif f.type == "duplicate":
             hi = s >= 3; med = s >= 2
+        elif f.type == "cross_table_inconsistency":
+            # strength = reporting steps apart; support = share of shared cells that agree.
+            # A large gap amid otherwise-agreeing tables is the consequential case.
+            hi = s >= 5 and sup >= 0.5; med = s >= 5 or (s >= 2 and sup >= 0.5)
         elif f.type == "flatness":
             hi = False; med = True
         elif f.type == "point_outlier":

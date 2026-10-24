@@ -15,8 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .pdf_ingest import parse_pdf
-from .analyze import analyze, is_pathological
+from .analyze import analyze, is_pathological, score
 from .stat_tests import statcheck, grim, grimmer, digit_tests
+from .cross_table import find_cross_table_inconsistencies
 
 
 @dataclass
@@ -29,6 +30,7 @@ class PdfAnalysis:
     non_table_count: int = 0           # clear metadata/prose blocks omitted from that list
     detector_runs: dict = field(default_factory=dict)
     source_kind: str = "pdf"           # "pdf" | "latex"
+    cross_table_flags: list = field(default_factory=list)
 
 
 def analyze_pdf(path: str, expect_flat=None) -> PdfAnalysis:
@@ -89,6 +91,21 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf", detector_seconds
             res.non_table_count += 1
         else:
             res.could_not_check.append(f"{where} ({t.n_rows}x{t.n_cols}): {t.reason}")
+
+    # 2b: cross-table consistency - the same metric at the same coordinates reported in two
+    # tables of this source should agree within rounding of the printed values.
+    all_tidies = []
+    for t in parse.tables:
+        if t.status in ("ok", "partial"):
+            tidies = getattr(t, "tidies", None) or ([t.tidy] if t.tidy is not None else [])
+            all_tidies.extend(tidies)
+    try:
+        xt_flags, xt_notes = find_cross_table_inconsistencies(all_tidies)
+        res.cross_table_flags = score(xt_flags)
+        for n in xt_notes:
+            res.could_not_check.append(f"cross-table: {n}")
+    except Exception as e:
+        res.could_not_check.append(f"cross-table consistency check failed ({type(e).__name__}); not run")
 
     # 3: statcheck + GRIM on extracted supported strings only, never entire manuscript validation
     res.stat_findings += statcheck(parse.stat_strings)
@@ -151,6 +168,15 @@ def format_report(res: PdfAnalysis) -> str:
                 mark = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}[f.priority]
                 L.append(f"  {mark}[{f.priority}] {f.type} along '{f.axis}': {f.suggestion}")
                 any_flag = any_flag or f.priority in ("HIGH", "MEDIUM")
+
+    # ---- cross-table consistency findings ----
+    if res.cross_table_flags:
+        L.append("")
+        L.append("Cross-table consistency (same metric, same coordinates, two tables):")
+        for f in res.cross_table_flags:
+            mark = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}[f.priority]
+            L.append(f"  {mark}[{f.priority}] {f.suggestion}")
+            any_flag = any_flag or f.priority in ("HIGH", "MEDIUM")
 
     # ---- statistical + digit findings ----
     stat_hits = [s for s in res.stat_findings if s.status == "finding"]
