@@ -607,3 +607,30 @@ def test_labeled_size_row_is_kept_as_data():
     header = ["Setting", "A", "B"]
     body = [["Params", "7B", "13B"], ["Score", "61.0", "64.2"], ["Other", "1.0", "2.0"]]
     assert _merge_size_subheader(header, body) == (header, body)
+
+
+_STACK_A = [["Model", "Acc"]] + [[f"a{i}", f"{60 + i}.5"] for i in range(5)]
+_STACK_B = [["Model", "F1"]] + [[f"b{i}", f"{80 + i}.25"] for i in range(5)]
+_STACKED_ROWS = _STACK_A + [["Table 3: second results", ""]] + _STACK_B
+
+
+def _docling_on_page(rows, page=1):
+    et = _docling_et(rows)
+    et.page = page
+    return et
+
+
+def test_stacked_table_is_replaced_when_layout_model_recovers_it(monkeypatch):
+    """A pdfplumber table holding two stacked tables is dropped once the layout model returns
+    both, so their numbers are analyzed once, not twice."""
+    res = _run_parse(monkeypatch, [_FakePage([_STACKED_ROWS])],
+                     [_docling_on_page(_STACK_A), _docling_on_page(_STACK_B)])
+    usable = [t for t in res.tables if t.status in ("ok", "partial")]
+    assert sorted(t.backend for t in usable) == ["docling", "docling"]
+
+
+def test_stacked_table_is_kept_when_layout_model_recovers_only_part(monkeypatch):
+    """If the layout model misses one of the stacked tables, the pdfplumber table stays, so the
+    missed numbers are still checked."""
+    res = _run_parse(monkeypatch, [_FakePage([_STACKED_ROWS])], [_docling_on_page(_STACK_A)])
+    assert any(t.backend == "pdfplumber" and t.status in ("ok", "partial") for t in res.tables)

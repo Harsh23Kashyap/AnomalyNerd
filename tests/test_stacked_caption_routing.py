@@ -1,13 +1,12 @@
 """A pdfplumber table that swallows stacked tables (caption rows inside the body) must also be
 read by the layout model, so the real results table is analyzed on the ordinary path."""
-import os
 from types import SimpleNamespace
 
 import pytest
 
 from anomalynerd.pdf_ingest import has_stacked_caption
 
-FIX = os.path.join(os.path.dirname(__file__), "fixtures")
+from conftest import fetch_arxiv_page
 
 
 def _t(*rows):
@@ -44,13 +43,13 @@ def test_empty_and_none_rows_do_not_match():
 @pytest.fixture(scope="module")
 def roberta():
     from anomalynerd.analyze_pdf import analyze_source
-    return analyze_source(os.path.join(FIX, "roberta_1907.11692_p13.pdf"))
+    return analyze_source(fetch_arxiv_page("roberta_1907.11692_p13"))
 
 
 @pytest.fixture(scope="module")
 def lora():
     from anomalynerd.analyze_pdf import analyze_source
-    return analyze_source(os.path.join(FIX, "lora_2106.09685_p23.pdf"))
+    return analyze_source(fetch_arxiv_page("lora_2106.09685_p23"))
 
 
 def _flags(r):

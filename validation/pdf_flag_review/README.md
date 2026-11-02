@@ -140,7 +140,10 @@ tables that are now read correctly (ChatGPT sentiment scores on page 74, Falcon'
 
 The one false alarm left is RoBERTa (page 13): a low-scoring task (CoLA) pooled with the others.
 A rule that compares each value only within its own column removed it, but also removed a real
-finding of the same shape (the ChatGPT score above), so it was not kept.
+finding of the same shape (the ChatGPT score above), so it was not kept. It is now listed as
+LOW instead of HIGH, with a note to check the column: when every value in the flagged cell's
+column lies beyond the same quartile of the whole table, the column is on its own scale. This
+also lowers one explained LoRA flag (page 23) to LOW, and changes nothing else on the four sets.
 
 **Fresh papers.** The first two fixes were tested on `fresh_papers.json`: they removed 18 of 56
 flags (14 false alarms, 4 explained) and added none. The other five fixes were then tested on both

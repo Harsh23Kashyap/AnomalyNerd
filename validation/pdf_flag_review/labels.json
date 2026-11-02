@@ -771,12 +771,13 @@
  {
   "paper": "lora",
   "page": 23,
-  "priority": "HIGH",
+  "priority": "LOW",
   "type": "point_outlier",
-  "suggestion": "Single value value 37.6 at {'Method': 'GPT-3 (PrefixEmbed)', 'method': 'MNLI(m)-100', '_raw': '37.6'} stands out from every other value in the table — you may want to investigate.",
+  "suggestion": "Single value value 37.6 at {'Method': 'GPT-3 (PrefixEmbed)', 'method': 'MNLI(m)-100', '_raw': '37.6'} stands out from every other value in the table — you may want to investigate. Every value in this column is on the same side, so the column may simply be a different task or scale; check the column rather than this cell.",
   "category": "real_explained",
   "reason": "low-data (100 examples) column, where every method scores lowest",
-  "source": "arXiv:2106.09685"
+  "source": "arXiv:2106.09685",
+  "updated": "priority HIGH to LOW, note added: the whole column is on its own scale"
  },
  {
   "paper": "lora",
@@ -811,12 +812,13 @@
  {
   "paper": "roberta",
   "page": 13,
-  "priority": "HIGH",
+  "priority": "LOW",
   "type": "point_outlier",
-  "suggestion": "Single value value 63.6 at {'col0': 'RoBERTaBASE + all data + 500k steps', 'method': 'CoLA', '_raw': '63.6'} stands out from every other value in the table — you may want to investigate.",
+  "suggestion": "Single value value 63.6 at {'col0': 'RoBERTaBASE + all data + 500k steps', 'method': 'CoLA', '_raw': '63.6'} stands out from every other value in the table — you may want to investigate. Every value in this column is on the same side, so the column may simply be a different task or scale; check the column rather than this cell.",
   "category": "false_alarm",
   "reason": "scores on different tasks (CoLA vs MNLI etc.) pooled, so the low-scale task looks like an outlier",
-  "source": "arXiv:1907.11692"
+  "source": "arXiv:1907.11692",
+  "updated": "priority HIGH to LOW, note added: the whole column is on its own scale"
  },
  {
   "paper": "roberta",

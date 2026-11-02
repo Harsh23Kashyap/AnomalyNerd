@@ -112,6 +112,20 @@ def _shares_numeric_core(docling_et, merged_et) -> bool:
     return shared >= 4
 
 
+def _covered_by(stand_in, others, frac=0.8) -> bool:
+    """True when the given tables together hold at least `frac` of the stand-in's numeric
+    cells, so replacing the stand-in by them loses (almost) nothing."""
+    a = _numeric_multiset(stand_in.rows)
+    total = sum(a.values())
+    if not total or not others:
+        return False
+    b = {}
+    for o in others:
+        for v, n in _numeric_multiset(o.rows).items():
+            b[v] = b.get(v, 0) + n
+    return sum(min(n, b.get(v, 0)) for v, n in a.items()) >= frac * total
+
+
 def _looks_like_header(row) -> bool:
     """A header row is mostly non-numeric labels."""
     cells = [_clean(c) for c in row if _clean(c) != ""]
@@ -536,12 +550,13 @@ def parse_pdf(path: str) -> PdfParse:
         if docling_note:
             notes.append(docling_note)
         if docling_tables:
-            if merged_tables:
+            if merged_tables or stacked_tables:
                 # Docling re-detects EVERY table region on the page, including tables
                 # pdfplumber already parsed cleanly. Drop those duplicates (the same
                 # signature test as the per-page dedupe above) so no table is analyzed twice.
                 kept_sigs = {(tuple(t.header), tuple(tuple(r) for r in t.rows))
-                             for t in tables if t.status != "merged"}
+                             for t in tables if t.status != "merged"
+                             and not any(t is st for st in stacked_tables)}
                 fresh_docling = []
                 for dt in docling_tables:
                     sig = (tuple(dt.header), tuple(tuple(r) for r in dt.rows))
@@ -558,7 +573,14 @@ def parse_pdf(path: str) -> PdfParse:
                         t.reason = ("a results table was detected but it is merged with "
                                     "surrounding text and the layout model could not isolate "
                                     "it; not analyzed")
-                tables = [t for t in tables if t.status != "merged"] + fresh_docling
+                # A stacked pdfplumber table (several tables read as one) is replaced by the
+                # layout model's tables when they recover its numbers; otherwise it is kept, so
+                # the same numbers are never analyzed twice and nothing is silently dropped.
+                replaced = [st for st in stacked_tables
+                            if _covered_by(st, [dt for dt in docling_tables
+                                                if getattr(dt, "page", None) == st.page])]
+                tables = [t for t in tables if t.status != "merged"
+                          and not any(t is st for st in replaced)] + fresh_docling
             else:
                 tables = tables + docling_tables
         else:
