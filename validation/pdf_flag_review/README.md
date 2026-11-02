@@ -18,6 +18,17 @@ Two sets of papers:
 set, `--fresh` and `--fresh2` for the others). Both labelled sets reproduce exactly against the
 code at the commit that added this folder; with the fixes below, they give the counts in "Fixes".
 
+To run all four sets at once with caching (about 30 minutes the first time, about a minute
+afterwards when the detectors are unchanged):
+
+```
+sh validation/pdf_flag_review/run_review.sh <pdf_dir> <cache_dir>
+```
+
+The cache stores Docling's output per PDF and each detector's result per table. Both are
+reused only while the PDF, the Docling version and options, and the detector code are
+unchanged, so a run with the cache gives the same flags as one without it.
+
 ## Method
 
 Every flag was checked against the extracted table and, where the table could be misread,
