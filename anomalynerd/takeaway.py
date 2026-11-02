@@ -136,6 +136,14 @@ def _who_wins(t: TidyTable, direction):
     return f"No single {_axis_word(who)} leads: {leaders} of the {n} {unit}."
 
 
+def _subject(f, t):
+    """What a flag is about. A wide CSV is melted into one 'value' metric with the original
+    column as the 'method' coordinate, so the flag's own column names the subject."""
+    if t.metric_name == "value" and (f.coords or {}).get("method") and t.entity_axis == "method":
+        return str(f.coords["method"])
+    return t.metric_name
+
+
 def _what_matters(t: TidyTable, flags):
     trends = [f for f in flags if f.type == "trend"]
     flat = [f for f in trends if (f.detail or {}).get("expected_flat")]
@@ -143,13 +151,13 @@ def _what_matters(t: TidyTable, flags):
         f = max(flat, key=lambda f: f.strength or 0)
         d = f.detail
         verb = "falls" if (d.get("slope") or 0) < 0 else "rises"
-        return (f"{t.metric_name} {verb} as {f.axis} goes up (from {_fmt(d.get('start_value'))} "
+        return (f"{_subject(f, t)} {verb} as {f.axis} goes up (from {_fmt(d.get('start_value'))} "
                 f"to {_fmt(d.get('end_value'))}), although {f.axis} was expected not to matter.")
     if trends:
         f = max(trends, key=lambda f: f.strength or 0)
         d = f.detail
         verb = "falls" if (d.get("slope") or 0) < 0 else "rises"
-        return (f"{t.metric_name} {verb} as {f.axis} goes up, from {_fmt(d.get('start_value'))} "
+        return (f"{_subject(f, t)} {verb} as {f.axis} goes up, from {_fmt(d.get('start_value'))} "
                 f"to {_fmt(d.get('end_value'))}.")
     shifts = [f for f in flags if f.type == "level_shift"]
     if shifts:
@@ -164,7 +172,7 @@ def _what_matters(t: TidyTable, flags):
                 b and a is not None and abs(a - b) >= 0.1 * abs(b)):
             return None   # a small, low-confidence shift is not worth a takeaway
         hedge = "" if f.priority in ("HIGH", "MEDIUM") else " The tool is not confident this is a shift rather than a steep trend."
-        return f"{t.metric_name} moves to a new level{where}{level}.{hedge}"
+        return f"{_subject(f, t)} moves to a new level{where}{level}.{hedge}"
     return None
 
 
@@ -173,8 +181,14 @@ def _plain_phrase(f, t):
     from .caption import _pattern_phrase_unscoped
     if f.type == "unit_mismatch" and f.suggestion:
         return f.suggestion.rstrip(".")
+    subj = _subject(f, t)
+    named = subj != t.metric_name
     scope = ", ".join(f"{_short(k, 30)}={_short(_fmt(v), 30)}" for k, v in (f.coords or {}).items()
-                      if not str(k).startswith("_") and str(v).strip())
+                      if not str(k).startswith("_") and str(v).strip() and not (named and k == "method"))
+    if named:
+        import copy
+        t = copy.copy(t)
+        t.metric_name = subj
     phrase = _pattern_phrase_unscoped(f, t)
     if t.metric_name:
         phrase = phrase.replace(t.metric_name, _short(t.metric_name))

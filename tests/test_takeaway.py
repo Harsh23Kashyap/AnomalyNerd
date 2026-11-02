@@ -144,3 +144,33 @@ def test_rows_that_are_benchmarks_get_no_winner():
 def test_setting_columns(name, setting):
     from anomalynerd.takeaway import _is_setting_column
     assert _is_setting_column(name) is setting
+
+
+def test_flatness_takeaway_names_the_flagged_column_not_value():
+    """co2_annual: the flatness warning is about the 'unc' column, and the takeaway must say so."""
+    t = read_csv(os.path.join(EX, "co2_annual.csv"))
+    tk = generate_takeaway(t, analyze(t))
+    check = [s for s in tk if s.startswith("Before relying on it")]
+    assert check and "unc is identical across year" in check[0]
+    assert "value is identical" not in check[0]
+    assert "method=unc" not in check[0]
+    assert tk[0].startswith("mean rises as year goes up")
+
+
+def test_web_analyze_returns_takeaways():
+    """The /analyze response must carry the takeaways the page renders."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    import importlib.util
+    from fastapi.testclient import TestClient
+    root = os.path.dirname(EX)
+    spec = importlib.util.spec_from_file_location("web_app_takeaway_test", os.path.join(root, "web", "app.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    with open(os.path.join(EX, "co2_annual.csv"), "rb") as f:
+        r = TestClient(mod.app).post("/analyze", files={"file": ("co2_annual.csv", f.read(), "text/csv")})
+    assert r.status_code == 200
+    tks = r.json()["takeaways"]
+    assert tks and tks[0]["table"] == "co2_annual"
+    joined = " ".join(tks[0]["sentences"])
+    assert "unc is identical across year" in joined and "value is identical" not in joined

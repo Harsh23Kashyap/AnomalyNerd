@@ -175,6 +175,7 @@ async def analyze_upload(
         "n_tables": sum(1 for t in result["tables"] if t["name"] != STATS_TABLE),
         "n_flags": len(all_flags),
         "counts": counts,
+        "takeaways": result.get("takeaways", []),
     }
 
 
