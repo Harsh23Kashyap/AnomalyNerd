@@ -264,10 +264,11 @@ def read_csv(path, metric_col=None, entity_col=None, lower_is_better=None,
                      lower_is_better=lib, rows=rows)
 
 
-def _infer_lower_is_better(name):
-    """Guess the metric direction from its column name: an explicit arrow wins, then error-type
-    words (loss, error, perplexity), then score-type words (accuracy, BLEU, pass@k); a name
-    with none of these keeps the old default of lower-is-better."""
+def metric_direction(name):
+    """Direction the metric's name states: True (lower is better), False (higher is better),
+    or None when the name says neither. An arrow wins, then error-type words (loss, error,
+    perplexity), then score-type words (accuracy, BLEU, pass@k)."""
+    name = name or ""
     if "↑" in name:
         return False
     if "↓" in name:
@@ -278,7 +279,13 @@ def _infer_lower_is_better(name):
         return True
     if any(w in low for w in _HIGHER_BETTER_SUBSTR) or words & _HIGHER_BETTER_WORDS:
         return False
-    return True
+    return None
+
+
+def _infer_lower_is_better(name):
+    """metric_direction, keeping the old default of lower-is-better when the name says neither."""
+    d = metric_direction(name)
+    return True if d is None else d
 
 
 def _median_scale(values):

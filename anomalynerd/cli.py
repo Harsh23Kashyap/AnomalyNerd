@@ -74,6 +74,8 @@ def main(argv=None):
                     help="Target word budget for the caption (overrides --caption level)")
     ap.add_argument("--compare-caption", default=None,
                     help="Compare the generated caption against this real caption (checkable claims only)")
+    ap.add_argument("--no-takeaway", action="store_true",
+                    help="Do not print the suggested takeaway (what a reader could conclude)")
     ap.add_argument("--html", metavar="PATH", help="Write a local HTML report to this file")
     ap.add_argument("--json", action="store_true", help="Emit JSON instead of a text report")
     args = ap.parse_args(argv)
@@ -109,6 +111,14 @@ def main(argv=None):
         caption = generate_caption(t, flags, level=(args.caption or "medium"),
                                    word_budget=args.caption_words)
 
+    takeaway = []
+    if not args.no_takeaway:
+        from .takeaway import generate_takeaway
+        try:
+            takeaway = generate_takeaway(t, flags, direction_known=bool(args.lower or args.higher))
+        except Exception:
+            takeaway = []   # optional; never let it break the report
+
     if args.html:
         from pathlib import Path
         from .html_report import render_report
@@ -120,12 +130,19 @@ def main(argv=None):
                "flags": [f.to_dict() for f in flags]}
         if caption is not None:
             out["caption"] = caption
+        if takeaway:
+            out["takeaway"] = takeaway
         if args.compare_caption is not None:
             from .caption_compare import compare_captions
             out["caption_comparison"] = compare_captions(caption, args.compare_caption)
         print(json.dumps(out, indent=2))
     else:
         print(_fmt_report(flags, t.name))
+        if takeaway:
+            from .takeaway import LABEL
+            print(f"\n{LABEL}:")
+            for sentence in takeaway:
+                print("  - " + sentence)
         if caption is not None:
             print("\nCaption:\n  " + caption)
         if args.compare_caption is not None:

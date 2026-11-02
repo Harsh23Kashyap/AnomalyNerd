@@ -32,6 +32,7 @@ class PdfAnalysis:
     detector_runs: dict = field(default_factory=dict)
     source_kind: str = "pdf"           # "pdf" | "latex" | "docx" | "xlsx"
     cross_table_flags: list = field(default_factory=list)
+    takeaways: dict = field(default_factory=dict)   # (page, idx) -> list of sentences
 
 
 _UNIT = {"docx": "table", "xlsx": "sheet"}   # what a "page" number means per format
@@ -197,6 +198,23 @@ def _analyze_parse(path, parse, expect_flat, source_kind="pdf", detector_seconds
         else:
             res.could_not_check.append(f"{where} ({t.n_rows}x{t.n_cols}): {t.reason}")
 
+    # 2a: a suggested takeaway per table, from the flags already found (never re-run detectors)
+    from .takeaway import table_takeaway
+    for t in parse.tables:
+        tidies = getattr(t, "tidies", None) or ([t.tidy] if t.tidy is not None else [])
+        if t.status not in ("ok", "partial") or not tidies:
+            continue
+        page = getattr(t, "page", 0)
+        keys = [(page, t.index_on_page, mi) for mi in range(len(tidies))]
+        if not all(k in res.table_flags for k in keys):
+            continue   # the table was not analyzed (for example misaligned rows)
+        try:
+            sentences = table_takeaway(tidies, [res.table_flags[k] for k in keys])
+        except Exception:
+            sentences = []   # a takeaway is optional; never let it break the report
+        if sentences:
+            res.takeaways[(page, t.index_on_page)] = sentences
+
     # 2b: cross-table consistency - the same metric at the same coordinates reported in two
     # tables of this source should agree within rounding of the printed values.
     all_tidies = []
@@ -276,6 +294,12 @@ def format_report(res: PdfAnalysis) -> str:
                 mark = {"HIGH": "!!", "MEDIUM": "! ", "LOW": "  "}[f.priority]
                 L.append(f"  {mark}[{f.priority}] {f.type} along '{f.axis}': {f.suggestion}")
                 any_flag = any_flag or f.priority in ("HIGH", "MEDIUM")
+        takeaway = res.takeaways.get((pg, t.index_on_page))
+        if takeaway:
+            from .takeaway import LABEL
+            L.append(f"  {LABEL}:")
+            for sentence in takeaway:
+                L.append(f"    - {sentence}")
 
     # ---- cross-table consistency findings ----
     if res.cross_table_flags:

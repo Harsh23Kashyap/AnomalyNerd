@@ -49,6 +49,24 @@ The comparison is deliberately scoped to checkable claims (trends, best method, 
 outliers, numbers) and ignores context the numbers cannot confirm (dataset names, "bold =
 best"). Human captions vary in quality, so this is a descriptive comparison, not a score.
 
+### Suggested takeaway
+
+Every report also suggests, in plain words, what a reader could conclude from each table. Like
+the caption, it uses only what the tool computed. It says up to three things: who comes out on
+top and whether everywhere or only in some settings, the clearest trend or level shift, and any
+flagged values to check first. For the 1970 draft lottery:
+
+```
+Suggested takeaway (computed from the table; the authors may conclude differently):
+  - mean_draft_rank falls as month_num goes up (from 201.2 to 121.5), although month_num was expected not to matter.
+```
+
+It says "best" only when the metric's name tells which direction is better (accuracy, loss,
+BLEU, an arrow), and "highest" otherwise. It names no winner when it cannot tell which labels
+compete: a table of raw observations, a hyperparameter table, rows that are benchmarks, or
+row labels that are numbers. Use `--no-takeaway` to leave it out. It is a suggestion; writing
+styles differ, and an author may draw a different conclusion from the same numbers.
+
 ### Analyze a whole article (PDF, LaTeX, Word or Excel)
 
 AnomalyNerd can read the results tables out of a paper, run the pattern detectors on
@@ -154,6 +172,7 @@ anomalynerd/            the library
   analyze.py, cli.py    run the detectors on a CSV and print the report
   caption.py            writes a short caption from what was computed
   caption_compare.py    compares it with a paper's own caption
+  takeaway.py           suggests what a reader could conclude from a table
   pdf_ingest.py         finds results tables in a PDF
   latex_ingest.py       finds results tables in LaTeX source
   office_ingest.py      reads tables from Word (.docx) and Excel (.xlsx) files

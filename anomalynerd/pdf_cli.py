@@ -47,6 +47,8 @@ def main(argv=None):
                                "detail": s.detail, "evidence": s.evidence}
                               for s in res.stat_findings],
             "could_not_check": res.could_not_check,
+            "takeaways": [{"page": k[0], "index": k[1], "sentences": v}
+                          for k, v in res.takeaways.items()],
         }
         print(json.dumps(out, indent=2))
     else:

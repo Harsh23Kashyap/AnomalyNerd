@@ -65,7 +65,16 @@ def _analyze_csv(path, expect_flat, display_name):
         "metric": t.metric_name,
         "flags": [_flag_view(f, name) for f in flags],
     }]
-    return {"source_kind": "csv", "tables": tables, "could_not_check": [], "stat_ok": []}
+    takeaways = []
+    try:
+        from anomalynerd.takeaway import generate_takeaway
+        sentences = generate_takeaway(t, flags)
+        if sentences:
+            takeaways.append({"table": name, "sentences": sentences})
+    except Exception:
+        pass   # optional; never let it break the result
+    return {"source_kind": "csv", "tables": tables, "could_not_check": [], "stat_ok": [],
+            "takeaways": takeaways}
 
 
 STATS_TABLE = "statistics in the text"
@@ -111,6 +120,8 @@ def _analyze_article(path, expect_flat):
         "tables": tables,
         "could_not_check": list(res.could_not_check),
         "stat_ok": passed,
+        "takeaways": [{"table": _loc(res.source_kind, k[0], k[1]), "sentences": v}
+                      for k, v in res.takeaways.items()],
     }
 
 

@@ -74,6 +74,17 @@
       summary.appendChild(box);
     });
 
+    // suggested takeaways, one block per table (plain text, escaped)
+    const takeArea = document.getElementById('takeawayArea');
+    if (takeArea) {
+      const tk = data.takeaways || [];
+      takeArea.innerHTML = tk.length
+        ? '<h2>Suggested takeaways</h2><p class="hint">Computed from each table; the authors may conclude differently.</p>' +
+          tk.map(x => '<div class="takeaway"><div class="ttl">' + esc(x.table) + '</div><ul>' +
+            x.sentences.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></div>').join('')
+        : '';
+    }
+
     // flag cards, each tagged with its priority (category) for filtering
     const flagsArea = document.getElementById('flagsArea');
     flagsArea.innerHTML = '<h2>What we checked and found</h2>';

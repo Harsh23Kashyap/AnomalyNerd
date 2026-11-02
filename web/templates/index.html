@@ -91,6 +91,10 @@
   .cnc .item{color:var(--muted);font-size:13px;margin:6px 0;border-bottom:1px solid var(--line);padding-bottom:6px}
   .cnc .item:last-child{border-bottom:none}
   .none{color:var(--muted);font-size:14px;font-style:italic;margin:10px 0}
+  .takeaway{border-left:3px solid var(--muted);padding:6px 12px;margin:10px 0}
+  .takeaway .ttl{font-size:13px;color:var(--muted);margin-bottom:4px}
+  .takeaway ul{margin:0;padding-left:18px}
+  .hint{color:var(--muted);font-size:13px;margin:4px 0 8px}
   .disclaim{color:var(--muted);font-size:13px;margin-top:28px;border-top:1px solid var(--line);padding-top:16px}
   #errorbox{background:rgba(224,96,60,.1);border:1px solid var(--high);border-radius:10px;padding:16px 18px;color:var(--ink)}
 </style>
@@ -147,6 +151,7 @@
       <div class="summary" id="summary"><!-- clickable category boxes injected here --></div>
       <div class="filterhint" id="filterHint"></div>
 
+      <div id="takeawayArea"></div>
       <div id="flagsArea"></div>
       <div id="statOkArea"></div>
 
