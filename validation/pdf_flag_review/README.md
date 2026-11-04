@@ -156,3 +156,31 @@ The unit-typo check adds one flag on the development set (LoRA, page 23: full fi
 trains all 175B parameters, a real value labelled explained) and one on `fresh2_papers.json` (the
 YOLOv7 error above). It adds nothing else on any set. The flags that
 did not change on the fresh sets have not been labelled.
+
+## What each check contributes
+
+To see which checks do the useful work, each one was turned off in turn and the 32 labelled
+papers were run again (`ablate.py`, at commit `eb30b60`). With every check on there are 141
+flags: 45 worth a look, 95 explained, 1 false alarm.
+
+| check turned off | flags lost | worth a look | explained | false alarm |
+|---|---|---|---|---|
+| point outliers | 89 | 25 | 63 | 1 |
+| duplicates and flatness | 33 | 18 | 15 | 0 |
+| trends | 8 | 2 | 6 | 0 |
+| level shifts | 6 | 0 | 6 | 0 |
+| statistics checks | 3 | 0 | 3 | 0 |
+| numeric jumps | 1 | 0 | 1 | 0 |
+| unit typos | 1 | 0 | 1 | 0 |
+| win reversals | 0 | 0 | 0 | 0 |
+| monotonicity | 0 | 0 | 0 | 0 |
+| category exceptions | 0 | 0 | 0 | 0 |
+
+Every flag comes from exactly one check (the losses add up to 141), and turning a check off
+never made another check fire, so no check hides another. On papers, outliers and duplicates
+give 43 of the 45 flags worth a look; duplicates have the best ratio (18 of 33). Monotonicity
+and category exceptions never fire on a PDF, because they need to be told the expected order,
+which only a CSV run with a hint provides. Win reversals give no flags after fix 1. The unit-typo
+check finds nothing worth a look here, but its one real find is on a new-paper set (YOLOv7).
+These are 32 papers, mostly machine learning, labelled by one reviewer.
+
