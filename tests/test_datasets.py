@@ -44,6 +44,15 @@ def test_ozone_flags_high_level_shift():
     assert f.detail["shifted_mean"] < 210
 
 
+def test_consecutive_years_are_not_a_row_index():
+    from anomalynerd.detectors import index_like_axes
+    mk = lambda xs: TidyTable("t", {"x": Axis("x", "numeric")}, None, "v", True,
+                              [{"x": x, "value": float(i)} for i, x in enumerate(xs)])
+    assert index_like_axes(mk(range(1956, 2023))) == set()
+    assert index_like_axes(mk(range(1, 67))) == {"x"}
+    assert index_like_axes(mk(range(0, 20))) == {"x"}
+
+
 # --------------------------------------------------------------- CO2 (trend, must NOT alarm)
 def test_co2_trend_not_high():
     t = read_csv(os.path.join(EX, "co2_annual.csv"),

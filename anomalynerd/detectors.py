@@ -75,6 +75,8 @@ def index_like_axes(t):
         if len(vals) < 5 or len(set(vals)) != len(vals):
             continue  # must be one row per value
         s = sorted(vals)
+        if s[0] not in (0, 1):
+            continue  # a serial index starts at 0 or 1; consecutive years (1956..2022) are a real axis
         steps = {round(s[i + 1] - s[i], 6) for i in range(len(s) - 1)}
         if steps == {1.0} or (len(steps) == 1 and s == list(range(int(s[0]), int(s[0]) + len(s)))):
             out.add(ax_name)

@@ -4,6 +4,9 @@
   Halley, from the British Antarctic Survey (J.D. Shanklin), file ZOZ5699.DAT
   (https://legacy.bas.ac.uk/met/jds/ozone/). Monthly means, Dobson Units; 0 in the source
   means "no measurement" and is treated as missing. October column = the ozone-hole signature.
+  Only the Dobson ground measurements (1956-2022, columns Aug to Apr) are used. The source file
+  ends with a separate block of satellite values for 2012 onward, laid out Jan to Dec; it is not
+  included, since it is a different instrument and its columns differ.
 - **co2_annual.csv / co2_raw.csv** — NOAA GML Mauna Loa annual mean CO2
   (https://gml.noaa.gov/ccgg/trends/). `unc` = reported uncertainty (metadata, not an axis).
 - **anscombe.csv** — Anscombe's quartet (Anscombe 1973), via the seaborn-data mirror.

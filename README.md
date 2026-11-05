@@ -138,7 +138,7 @@ input becomes the same tidy shape, detectors never care about the source format.
 
 | Dataset | What it catches |
 |---|---|
-| Antarctic ozone (Halley, 1956–2011) | the ozone-hole level shift (the drop once dismissed as errors) |
+| Antarctic ozone (Halley, 1956–2022) | the ozone-hole level shift (the drop once dismissed as errors) |
 | Mauna Loa CO₂ | *nothing* — correctly stays quiet on a normal upward trend |
 | Anscombe's quartet | the known outliers in datasets III and IV; clean sets stay clean |
 | Newcomb speed-of-light (1882) | both historically-documented outliers |
