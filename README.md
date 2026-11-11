@@ -228,3 +228,13 @@ The HTML report stays on your machine. Editing changes the displayed copy, not t
 1. Install the requirements and run the tests above. All should pass before you open a pull request.
 2. Keep each pull request to one change, and add a test for it.
 3. Do not commit generated reports or checkpoint folders.
+
+### Resumable multi-file article review
+
+`python -m anomalynerd.corpus_cli one.pdf two.xlsx --output-dir .anomaly-corpus`
+reviews explicit local files sequentially, saves their full JSON reports and an
+atomic progress manifest, and reuses valid completed results on rerun. Each file
+has a whole-process timeout. Process completion is not full extraction or a clean
+paper; skipped checks stay visible and failed detectors are retried. LaTeX roots
+always rerun to avoid missing include-file changes. See
+[corpus review limits and examples](documentation/CORPUS_REVIEW.md).
