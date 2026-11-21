@@ -1,27 +1,40 @@
 # CSV column integrity
 
-Duplicate column names previously overwrote earlier values during CSV import.
-Rows with more cells than the header silently discarded the extra values.
-Reject both shapes before inference or detector execution. The error names
-the header problem or the row's ending line instead of returning findings on
-a different table from the supplied file.
+Duplicate named column headers overwrote earlier values during CSV import, and
+rows with more cells than the header silently discarded the extra values. The
+import now rejects both ambiguous shapes before inference or detector
+execution, while keeping main's tolerance for harmless shapes (maintainer
+review on PR #19):
 
-Unique blank/whitespace headers, short rows, quoted commas, leading comments,
-BOMs and blank rows retain their existing behavior. Header names are not
-renamed or normalized. This does not fix scientific labels or PDF extraction.
-The existing upload error remains HTTP 500 with a detail message; this patch
-does not redesign that response contract.
+- Rejected: a duplicate NON-BLANK header (a named-column lookup could return
+  the wrong source column).
+- Rejected: any cell beyond the header width that contains data (those values
+  would be silently discarded).
+- Accepted, as on main: blank or whitespace-only column names, singly or
+  repeated (they are unnamed positional columns; no name lookup can collide).
+- Accepted, as on main: trailing empty or whitespace-only cells beyond the
+  header width (they carry no values).
+
+The error names the duplicate header or the row's ending line instead of
+returning findings on a different table from the supplied file. Short rows,
+quoted commas, leading comments, BOMs and blank rows retain their existing
+behavior. Header names are not renamed or normalized. This does not fix
+scientific labels or PDF extraction. The existing upload error remains
+HTTP 500 with a detail message; this patch does not redesign that response
+contract.
 
 ```sh
 python -B -m unittest discover -s tests -p test_csv_column_integrity.py -v
 python -B -m pytest -q -rs
 ```
 
-The 14 added offline tests give 8 failures/6 passes on main 8254824 and all
-14 pass with the fix, including read_tables and the real local upload route.
-Ten repeats pass 140 checks. A full socket-blocked comparison gives main
-286 passes/8 new failures/10 skips, versus 294 passes/the same 10 skips with
-the fix. All ten skips need external arXiv PDF fixtures unavailable with the
-network blocked. They are unqualified, not fixed; this is not a clean full-PDF
-result or a new scientific-validation result. No models, manuscripts, paid
-runs, merge or deployment are involved.
+The 22 offline tests give 8 failures/14 passes on unmodified main (5f40ba1)
+and 22 passes with the fix, including `read_tables` and the real local upload
+route; the 8 main failures are exactly the rejection behaviors this branch
+adds. Ten repeats pass 220 checks. The full suite gives 304 passes/8 failures
+on this branch, and the identical 8 tests fail on unmodified main in this
+environment (they depend on external arXiv PDF fixtures and the optional
+docling layout model). Those paths remain unqualified. This does not
+establish that older PDF failures are fixed, or change scientific
+labels/priority ranking. No models, manuscripts, paid runs, merge or
+deployment are involved.
