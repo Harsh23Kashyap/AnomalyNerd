@@ -118,13 +118,24 @@ def _read_csv_rows(path):
         header = next(reader)
     except StopIteration:
         raise ValueError(f"{path}: no header row found (the file is empty or only comments)")
-    if len(set(header)) != len(header):
-        raise ValueError(f"{path}: duplicate CSV column headers are ambiguous")
+    # Maintainer review on PR #19: blank column names stay allowed (they are unnamed
+    # positional columns, as on main); only duplicate NON-BLANK headers are ambiguous,
+    # because a named column lookup could silently return the wrong source column.
+    seen_named = set()
+    for name in header:
+        if not name.strip():
+            continue
+        if name in seen_named:
+            raise ValueError(f"{path}: duplicate CSV column header {name!r} is ambiguous")
+        seen_named.add(name)
     data = []
     for row in reader:
         if not any(c.strip() for c in row):
             continue
-        if len(row) > len(header):
+        # Trailing empty cells beyond the header width carry no values, so they are
+        # accepted (as on main); only extra cells containing DATA are rejected, since
+        # those values would be silently discarded.
+        if any(c.strip() for c in row[len(header):]):
             raise ValueError(f"{path}: CSV row ending at line {reader.line_num} has more columns than the header")
         data.append(row)
     return header, data
